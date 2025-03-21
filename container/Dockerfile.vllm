@@ -206,7 +206,7 @@ RUN --mount=type=bind,source=./container/deps/,target=/tmp/deps \
     sed -i "s/-cp38-abi3-linux_x86_64.whl/-cp38-abi3-manylinux1_x86_64.whl/g" ${VLLM_PATCHED_PACKAGE_NAME}-${VLLM_REF}.dist-info/RECORD && \
     mkdir -p /workspace/dist && \
     wheel pack . --dest-dir /workspace/dist && \
-    uv pip install /workspace/dist/${VLLM_PATCHED_PACKAGE_NAME}-*.whl
+    uv pip install /workspace/dist/${VLLM_PATCHED_PACKAGE_NAME}-*.whl -i "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
 
 # Install test dependencies
 RUN --mount=type=bind,source=./container/deps/requirements.test.txt,target=/tmp/requirements.txt \
@@ -223,6 +223,9 @@ RUN printf "[safe]\n      directory=/workspace\n" > /root/.gitconfig
 RUN ln -sf /bin/bash /bin/sh
 
 ### BUILDS ###
+
+ENV RUSTUP_DIST_SERVER="https://rsproxy.cn"
+ENV RUSTUP_UPDATE_ROOT="https://rsproxy.cn/rustup"
 
 # Rust build/dev dependencies
 RUN apt update -y && \
@@ -256,6 +259,7 @@ COPY LICENSE /workspace/
 COPY Cargo.toml /workspace/
 COPY Cargo.lock /workspace/
 COPY rust-toolchain.toml /workspace/
+COPY container/config.toml /root/.cargo/config
 
 COPY lib/ /workspace/lib/
 COPY components /workspace/components
@@ -338,7 +342,7 @@ COPY --from=perf_analyzer /workspace/perf_analyzer /perf_analyzer
 ENV PATH="/perf/bin:${PATH}"
 
 # Install genai-perf for benchmarking
-RUN uv pip install "git+https://github.com/triton-inference-server/perf_analyzer.git@${GENAI_PERF_TAG}#subdirectory=genai-perf"
+RUN uv pip install "git+https://github.com/triton-inference-server/perf_analyzer.git@${GENAI_PERF_TAG}#subdirectory=genai-perf"  -i "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
 RUN uv pip uninstall tritonclient
 
 COPY . /workspace
