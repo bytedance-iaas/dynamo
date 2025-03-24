@@ -182,7 +182,7 @@ ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
 # Common dependencies
 RUN --mount=type=bind,source=./container/deps/requirements.txt,target=/tmp/requirements.txt \
-    uv pip install --requirement /tmp/requirements.txt -i -i "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
+    uv pip install --requirement /tmp/requirements.txt -i "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
 
 # Install patched vllm - keep this early in Dockerfile to avoid
 # rebuilds from unrelated source code changes
