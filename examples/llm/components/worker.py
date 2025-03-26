@@ -64,9 +64,10 @@ class VllmWorker:
         self._prefill_queue_nats_server = os.getenv(
             "NATS_SERVER", "nats://localhost:4222"
         )
-        self._prefill_queue_stream_name = self.model_name
+        self._prefill_queue_stream_name = PrefillQueue.generate_stream_name(self.model_name)
         logger.info(
-            f"Prefill queue: {self._prefill_queue_nats_server}:{self._prefill_queue_stream_name}"
+            f"Prefill queue: {self._prefill_queue_nats_server}:{self._prefill_queue_stream_name}" \
+                + f" for model {self.model_name}"
         )
 
         if self.engine_args.remote_prefill:

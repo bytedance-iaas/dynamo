@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
+import hashlib
 from typing import Optional
 
 import msgspec
@@ -38,6 +38,10 @@ class PrefillQueue(NATSQueue):
             nats_server=nats_server,
             dequeue_timeout=dequeue_timeout,
         )
+
+    @classmethod
+    def generate_stream_name(cls, name = "vllm") -> str:
+        return hashlib.sha256(str(name).encode()).hexdigest()[:8]
 
     async def enqueue_prefill_request(
         self, prefill_request: RemotePrefillRequest

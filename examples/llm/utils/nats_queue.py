@@ -39,7 +39,7 @@ class NATSQueue:
         self._js: Optional[JetStreamContext] = None
         # TODO: check if this is needed
         # Sanitize stream_name to remove path separators
-        self._stream_name = stream_name.replace("/", "_").replace("\\", "_")
+        self._stream_name = stream_name
         self._subject = f"{self._stream_name}.*"
         self.dequeue_timeout = dequeue_timeout
         self._subscriber: Optional[JetStreamContext.PullSubscription] = None
