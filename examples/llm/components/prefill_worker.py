@@ -84,12 +84,14 @@ class PrefillWorker:
     async def prefill_queue_handler(self):
         print("[DEBUG] prefill queue handler entered")
         prefill_queue_nats_server = os.getenv("NATS_SERVER", "nats://localhost:4222")
-        prefill_queue_stream_name = (
+        model_name = (
             self.engine_args.served_model_name
             if self.engine_args.served_model_name is not None
             else "vllm"
         )
-        print(f"Prefill queue: {prefill_queue_nats_server}:{prefill_queue_stream_name}")
+        prefill_queue_stream_name = PrefillQueue.generate_stream_name(model_name)
+        print(f"Prefill queue: {prefill_queue_nats_server}:{prefill_queue_stream_name}" \
+                 + f" for model {model_name}")
         self.initialized = True
         # TODO: integrate prefill_queue to a dynamo endpoint
         async with PrefillQueue.get_instance(

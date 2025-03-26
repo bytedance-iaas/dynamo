@@ -26,7 +26,6 @@ from utils.vllm import parse_vllm_args
 from vllm.entrypoints.openai.api_server import (
     build_async_engine_client_from_engine_args,
 )
-from vllm.logger import logger as vllm_logger
 from vllm.remote_prefill import RemotePrefillParams, RemotePrefillRequest
 from vllm.sampling_params import RequestOutputKind
 
@@ -59,9 +58,10 @@ class VllmWorker:
         self._prefill_queue_nats_server = os.getenv(
             "NATS_SERVER", "nats://localhost:4222"
         )
-        self._prefill_queue_stream_name = self.model_name
-        vllm_logger.info(
-            f"Prefill queue: {self._prefill_queue_nats_server}:{self._prefill_queue_stream_name}"
+        self._prefill_queue_stream_name = PrefillQueue.generate_stream_name(self.model_name)
+        print(
+            f"Prefill queue: {self._prefill_queue_nats_server}:{self._prefill_queue_stream_name}" \
+                + f" for model {self.model_name}"
         )
 
         if self.engine_args.remote_prefill:
@@ -82,7 +82,7 @@ class VllmWorker:
             os.environ["VLLM_WORKER_ID"] = str(VLLM_WORKER_ID)
             os.environ["VLLM_KV_NAMESPACE"] = "dynamo"
             os.environ["VLLM_KV_COMPONENT"] = class_name
-            vllm_logger.info(f"Generate endpoint ID: {VLLM_WORKER_ID}")
+            print(f"Generate endpoint ID: {VLLM_WORKER_ID}")
         self.metrics_publisher = KvMetricsPublisher()
 
     @async_on_start
