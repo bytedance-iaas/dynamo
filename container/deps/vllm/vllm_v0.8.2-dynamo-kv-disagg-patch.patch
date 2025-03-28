@@ -2539,7 +2539,7 @@ index 5148516..f0a5b3b 100644
  
  def ensure_model_parallel_initialized(
 diff --git a/vllm/engine/llm_engine.py b/vllm/engine/llm_engine.py
-index 3d019ea..89e8d45 100644
+index 3d019ea..70d4f07 100644
 --- a/vllm/engine/llm_engine.py
 +++ b/vllm/engine/llm_engine.py
 @@ -2,13 +2,17 @@
@@ -2811,7 +2811,16 @@ index 3d019ea..89e8d45 100644
  
              ctx.seq_group_metadata_list = seq_group_metadata_list
              ctx.scheduler_outputs = scheduler_outputs
-@@ -1430,8 +1525,31 @@ class LLMEngine:
+@@ -1404,6 +1499,8 @@ class LLMEngine:
+ 
+         assert seq_group_metadata_list is not None
+         assert scheduler_outputs is not None
++        request_notif_counter = {}
++        request_done_counter = {}
+ 
+         if not scheduler_outputs.is_empty():
+ 
+@@ -1430,9 +1527,33 @@ class LLMEngine:
                  execute_model_req.async_callback = self.async_callbacks[
                      virtual_engine]
  
@@ -2840,11 +2849,14 @@ index 3d019ea..89e8d45 100644
 +            
              try:
 -                outputs = self.model_executor.execute_model(
-+                outputs, request_notif_counter, request_done_counter = self.model_executor.execute_model(
-                     execute_model_req=execute_model_req)
+-                    execute_model_req=execute_model_req)
++                outputs = self.model_executor.execute_model(execute_model_req=execute_model_req)
++                if isinstance(outputs, tuple) and len(outputs) == 3:
++                    outputs, request_notif_counter, request_done_counter = outputs
                  self._skip_scheduling_next_step = False
              except InputProcessingError as e:
-@@ -1458,7 +1576,26 @@ class LLMEngine:
+                 # The input for this request cannot be processed, so we must
+@@ -1458,7 +1579,28 @@ class LLMEngine:
              if len(ctx.output_queue) > 0:
                  self._process_model_outputs(ctx=ctx)
              # No outputs in this case
@@ -2855,8 +2867,10 @@ index 3d019ea..89e8d45 100644
 +                blocks_to_swap_out=[],
 +                blocks_to_copy=[])
 +
-+            outputs, request_notif_counter, request_done_counter = self.model_executor.execute_model(
++            outputs = self.model_executor.execute_model(
 +                execute_model_req=execute_model_req)
++            if isinstance(outputs, tuple) and len(outputs) == 3:
++                    outputs, request_notif_counter, request_done_counter = outputs
 +            
 +        for req_id, notif_count in request_notif_counter.items():
 +            self._request_notif_counter[req_id] += notif_count
@@ -2872,7 +2886,7 @@ index 3d019ea..89e8d45 100644
  
          # Finish the current step for all the sequence groups.
          if self.scheduler_config.is_multi_step:
-@@ -1518,7 +1655,7 @@ class LLMEngine:
+@@ -1518,7 +1660,7 @@ class LLMEngine:
              # queued control plane messages, such as add/remove lora adapters.
              logger.debug("Stopping remote worker execution loop.")
              self.model_executor.stop_remote_worker_execution_loop()
@@ -3746,6 +3760,68 @@ index 61867b0..3ed720b 100644
  
      @property
      def is_first_multi_step(self) -> bool:
+diff --git a/vllm/spec_decode/batch_expansion.py b/vllm/spec_decode/batch_expansion.py
+index e08ed74..f5fd71d 100644
+--- a/vllm/spec_decode/batch_expansion.py
++++ b/vllm/spec_decode/batch_expansion.py
+@@ -80,6 +80,8 @@ class BatchExpansionTop1Scorer(SpeculativeScorer):
+         target_sampler_output = self._scorer_worker.execute_model(
+             execute_model_req=execute_model_req.clone(
+                 seq_group_metadata_list=target_seq_group_metadata_list))
++        if isinstance(target_sampler_output, tuple):
++            target_sampler_output = target_sampler_output[0]
+         assert len(target_sampler_output) == 1, "expected single-step output"
+         target_sampler_output = target_sampler_output[0]
+ 
+diff --git a/vllm/spec_decode/multi_step_worker.py b/vllm/spec_decode/multi_step_worker.py
+index d8d5491..504196b 100644
+--- a/vllm/spec_decode/multi_step_worker.py
++++ b/vllm/spec_decode/multi_step_worker.py
+@@ -99,8 +99,10 @@ class MultiStepWorker(ProposerWorkerBase, DelegateWorkerBase):
+             if expanded_request.previous_hidden_states is not None:
+                 self.worker.model_runner.return_hidden_states = True
+             for _ in range(sample_len):
+-                model_output: List[SamplerOutput] = self.worker.execute_model(
++                model_output = self.worker.execute_model(
+                     execute_model_req=expanded_request)
++                if isinstance(model_output, tuple):
++                    model_output = model_output[0]
+                 assert (len(model_output) == 1
+                         ), "composing multistep workers not supported"
+                 model_output = model_output[0]
+diff --git a/vllm/spec_decode/spec_decode_worker.py b/vllm/spec_decode/spec_decode_worker.py
+index a724bea..f2afad6 100644
+--- a/vllm/spec_decode/spec_decode_worker.py
++++ b/vllm/spec_decode/spec_decode_worker.py
+@@ -391,6 +391,18 @@ class SpecDecodeWorker(LoRANotSupportedWorkerBase):
+     def load_model(self, *args, **kwargs):
+         pass
+ 
++    def initialize_nixl(self, engine_id: str) -> List[bytes]:
++        return self.scorer_worker.initialize_nixl(engine_id)
++
++    def get_nixl_agent_metadata(self) -> bytes:
++        return self.scorer_worker.get_nixl_agent_metadata()
++
++    def add_remote_nixl_metadata(self, engine_id: str, agents_metadata: List[bytes], kv_caches_base_addr: List[List[Tuple[int, int]]], num_blocks: int) -> str:
++        return self.scorer_worker.add_remote_nixl_metadata(engine_id, agents_metadata, kv_caches_base_addr, num_blocks)
++
++    def get_nixl_kv_caches_base_addr(self) -> List[bytes]:
++        return self.scorer_worker.get_nixl_kv_caches_base_addr()
++
+     def _configure_model_sampler_for_spec_decode(self):
+         """Configure model sampler to emit GPU tensors. This allows spec decode
+         to keep data on device without transferring to CPU and serializing,
+@@ -671,6 +683,9 @@ class SpecDecodeWorker(LoRANotSupportedWorkerBase):
+         """
+ 
+         sampler_output = self.scorer_worker.execute_model(execute_model_req)
++        if isinstance(sampler_output, tuple) and len(sampler_output) == 3:
++            sampler_output = sampler_output[0]
++
+         assert len(sampler_output) == 1
+         sampler_output = sampler_output[0]
+ 
 diff --git a/vllm/worker/model_runner.py b/vllm/worker/model_runner.py
 index 473bd90..27db40f 100644
 --- a/vllm/worker/model_runner.py
