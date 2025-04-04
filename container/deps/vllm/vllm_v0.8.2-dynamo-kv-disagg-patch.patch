@@ -919,10 +919,10 @@ index 0000000..a8a88ab
 +        raise ValueError(f"Invalid direction: {direction}")
 diff --git a/vllm/distributed/device_communicators/nixl.py b/vllm/distributed/device_communicators/nixl.py
 new file mode 100644
-index 0000000..eff67e9
+index 0000000..30f5298
 --- /dev/null
 +++ b/vllm/distributed/device_communicators/nixl.py
-@@ -0,0 +1,401 @@
+@@ -0,0 +1,414 @@
 +import torch
 +from typing import List
 +from vllm.config import VllmConfig
@@ -1069,20 +1069,33 @@ index 0000000..eff67e9
 +        if i is not None:
 +            num_blocks = self.num_blocks
 +            for layer_id in layer_ids:
-+                for is_value in [0, 1]:
++                if self.use_mla:
 +                    staging_range_idx = 0
 +                    for block_id in block_ids:
 +                        if block_id > staging_ranges[staging_range_idx][1] or block_id < staging_ranges[staging_range_idx][0]:
 +                            staging_range_idx += 1
 +                        start_offset = staging_ranges[staging_range_idx][0]
 +                        i_offset = i * (staging_ranges[staging_range_idx][-1] - start_offset + 1)
-+                        descs_ids.append(layer_id * 2 * num_blocks * tp_multiplier + is_value * num_blocks * tp_multiplier + start_offset * tp_multiplier + i_offset + (block_id - start_offset))
++                        descs_ids.append(layer_id * num_blocks * tp_multiplier + start_offset * tp_multiplier + i_offset + (block_id - start_offset))
++                else:
++                    for is_value in [0, 1]:
++                        staging_range_idx = 0
++                        for block_id in block_ids:
++                            if block_id > staging_ranges[staging_range_idx][1] or block_id < staging_ranges[staging_range_idx][0]:
++                                staging_range_idx += 1
++                            start_offset = staging_ranges[staging_range_idx][0]
++                            i_offset = i * (staging_ranges[staging_range_idx][-1] - start_offset + 1)
++                            descs_ids.append(layer_id * 2 * num_blocks * tp_multiplier + is_value * num_blocks * tp_multiplier + start_offset * tp_multiplier + i_offset + (block_id - start_offset))
 +        else:
 +            num_blocks = self.dst_num_blocks[engine_id]
 +            for layer_id in layer_ids:
-+                for is_value in [0, 1]:
++                if self.use_mla:
 +                    for block_id in block_ids:
-+                        descs_ids.append(layer_id * 2 * num_blocks + is_value * num_blocks + block_id)
++                        descs_ids.append(layer_id * num_blocks + block_id)
++                else:
++                    for is_value in [0, 1]:
++                        for block_id in block_ids:
++                            descs_ids.append(layer_id * 2 * num_blocks + is_value * num_blocks + block_id)
 +        return descs_ids
 +
 +    def _get_same_length_ranges(self, src_ranges, dst_ranges, return_original_src_ranges=False):
@@ -1190,7 +1203,7 @@ index 0000000..eff67e9
 +                if self.use_mla:
 +                    cache_src = kv_cache[local_range[0]:local_range[1] + 1].unsqueeze(0)
 +                    cache_staging = kv_cache[staging_range[0]:staging_range[1] + 1].unsqueeze(0)
-+                    rearrange_tensors(cache_src, cache_staging, tp_multiplier)
++                    rearrange_tensors(cache_src, cache_staging, 1, "read") # for mla, the head size is not the same as flash attention, split not required here
 +                else:
 +                    for cache in kv_cache:
 +                        rearrange_tensors(cache[local_range[0]:local_range[1] + 1], cache[staging_range[0]:staging_range[1] + 1], tp_multiplier, "read")
@@ -1229,7 +1242,7 @@ index 0000000..eff67e9
 +                if self.use_mla:
 +                    cache_src = kv_cache[local_range[0]:local_range[1] + 1].unsqueeze(0)
 +                    cache_staging = kv_cache[staging_range[0]:staging_range[1] + 1].unsqueeze(0)
-+                    rearrange_tensors(cache_src, cache_staging, tp_multiplier)
++                    rearrange_tensors(cache_src, cache_staging, 1, "write") # for mla, the head size is not the same as flash attention, split not required here
 +                else:
 +                    for cache in kv_cache:
 +                        rearrange_tensors(cache[local_range[0]:local_range[1] + 1], cache[staging_range[0]:staging_range[1] + 1], tp_multiplier, "write")
@@ -3895,7 +3908,7 @@ index 473bd90..27db40f 100644
  
          # check if the current run is profiling
 diff --git a/vllm/worker/worker.py b/vllm/worker/worker.py
-index ad94a6a..9aa4e4d 100644
+index ad94a6a..6768919 100644
 --- a/vllm/worker/worker.py
 +++ b/vllm/worker/worker.py
 @@ -2,7 +2,7 @@
@@ -3973,7 +3986,7 @@ index ad94a6a..9aa4e4d 100644
  
          return WorkerInput(
              num_seq_groups=num_seq_groups,
-@@ -376,6 +421,11 @@ class Worker(LocalOrDistributedWorkerBase):
+@@ -376,6 +421,12 @@ class Worker(LocalOrDistributedWorkerBase):
              blocks_to_copy=blocks_to_copy,
              virtual_engine=virtual_engine,
              num_steps=num_steps,
@@ -3982,6 +3995,7 @@ index ad94a6a..9aa4e4d 100644
 +            remote_block_ids=[r.remote_block_ids for r in mem_transfer_reqs],
 +            remote_engine_id=[r.remote_engine_id for r in mem_transfer_reqs],
 +            notify_msg=[r.notify_msg for r in mem_transfer_reqs],
++            op_type=[r.op_type for r in mem_transfer_reqs],
          )
  
      @torch.inference_mode()
