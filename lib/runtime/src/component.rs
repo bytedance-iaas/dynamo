@@ -66,7 +66,7 @@ mod component;
 mod endpoint;
 mod namespace;
 mod registry;
-mod service;
+pub mod service;
 
 pub use client::Client;
 
@@ -168,11 +168,11 @@ impl Component {
         unimplemented!("endpoints")
     }
 
-    pub async fn scrape_stats(&self, duration: Duration) -> Result<ServiceSet> {
+    pub async fn scrape_stats(&self, timeout: Duration) -> Result<ServiceSet> {
         let service_name = self.service_name();
         let service_client = self.drt().service_client();
         service_client
-            .collect_services(&service_name, duration)
+            .collect_services(&service_name, timeout)
             .await
     }
 

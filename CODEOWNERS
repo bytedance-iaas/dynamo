@@ -14,13 +14,13 @@ Cargo.toml @ryanolson @grahamking @paulhendricks @biswapanda @tmonty12 @guanluo 
 /container/ @rmccorm4 @tanmayv25 @ptarasiewiczNV @ishandhanani @alec-flowers @nnshah1 @ai-dynamo/Devops
 
 # Kubernetes
-/deploy/Kubernetes/ @whoisj @hutm @biswapanda
+/deploy/Kubernetes/ @whoisj @hutm @biswapanda @mohammedabdulwahhab
 
 # Dynamo deploy
-/deploy/ @hutm @biswapanda @ishandhanani @julienmancuso @hhzhang16 @nnshah1
+/deploy/ @hutm @biswapanda @ishandhanani @julienmancuso @hhzhang16 @nnshah1 @mohammedabdulwahhab
 
 # Dynamo deploy
-/examples/ @hutm @biswapanda @ishandhanani @julienmancuso @hhzhang16 @nnshah1 @tanmayv25 @piotrm-nvidia @ptarasiewiczNV @ryanolson @grahamking @paulhendricks @biswapanda @tmonty12 @guanluo @rmccorm4 @tedzhouhk @alec-flowers @kkranen @sshchoi @PeaBrane
+/examples/ @hutm @biswapanda @ishandhanani @julienmancuso @hhzhang16 @nnshah1 @tanmayv25 @piotrm-nvidia @ptarasiewiczNV @ryanolson @grahamking @paulhendricks @biswapanda @tmonty12 @guanluo @rmccorm4 @tedzhouhk @alec-flowers @kkranen @sshchoi @PeaBrane @mohammedabdulwahhab
 
 
 
@@ -29,5 +29,9 @@ Cargo.toml @ryanolson @grahamking @paulhendricks @biswapanda @tmonty12 @guanluo 
 CODEOWNERS @ai-dynamo/Devops @nnshah1
 
 # Legal
-/LICENSE @ai-dynamo/Devops
+/ATTRIBUTIONS-Rust.md @ai-dynamo/Devops
 /ATTRIBUTIONS.md @ai-dynamo/Devops
+/CODE_OF_CONDUCT.md @ai-dynamo/Devops
+/CONTRIBUTING.md @ai-dynamo/Devops
+/LICENSE @ai-dynamo/Devops
+/SECURITY.md @ai-dynamo/Devops
