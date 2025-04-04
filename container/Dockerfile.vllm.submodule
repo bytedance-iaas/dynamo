@@ -183,7 +183,7 @@ ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
 # Common dependencies
 RUN --mount=type=bind,source=./container/deps/requirements.txt,target=/tmp/requirements.txt \
-    uv pip install --requirement /tmp/requirements.txt
+    uv pip install --requirement /tmp/requirements.txt -i "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
 
 # Install patched vllm - keep this early in Dockerfile to avoid
 # rebuilds from unrelated source code changes
@@ -193,16 +193,16 @@ RUN cd /workspace/vllm && \
     rm -rf .deps && \
     mkdir -p .deps && \
     export CMAKE_BUILD_TYPE=Release && \
-    uv pip install --requirement requirements/build.txt && \
+    uv pip install --requirement requirements/build.txt -i "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple" && \
     python3 setup.py bdist_wheel --dist-dir=/workspace/dist --py-limited-api=cp38 && \
     mv /workspace/dist/vllm-*.whl /workspace/dist/vllm-0.8.2-cp38-abi3-manylinux1_x86_64.whl && \
-    uv pip install /workspace/dist/vllm-*.whl &&\
+    uv pip install /workspace/dist/vllm-*.whl -i "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple" &&\
     unset CMAKE_BUILD_TYPE && \
     cd -
 
 # Install test dependencies
 RUN --mount=type=bind,source=./container/deps/requirements.test.txt,target=/tmp/requirements.txt \
-    uv pip install --requirement /tmp/requirements.txt
+    uv pip install --requirement /tmp/requirements.txt -i "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
 
 # ### MISC UTILITY SETUP ###
 
@@ -230,6 +230,11 @@ ENV RUSTUP_HOME=/usr/local/rustup \
     PATH=/usr/local/cargo/bin:$PATH \
     RUST_VERSION=1.86.0 \
     RUSTARCH=x86_64-unknown-linux-gnu
+
+ARG PROXY_IP
+ARG PROXY_PORT
+ENV http_proxy=http://${PROXY_IP}:${PROXY_PORT}
+ENV https_proxy=http://${PROXY_IP}:${PROXY_PORT}
 
 RUN wget --tries=3 --waitretry=5 "https://static.rust-lang.org/rustup/archive/1.28.1/${RUSTARCH}/rustup-init" && \
     echo "a3339fb004c3d0bb9862ba0bce001861fe5cbde9c10d16591eb3f39ee6cd3e7f *rustup-init" | sha256sum -c - && \
@@ -338,7 +343,8 @@ COPY --from=perf_analyzer /workspace/perf_analyzer /perf_analyzer
 ENV PATH="/perf/bin:${PATH}"
 
 # Install genai-perf for benchmarking
-RUN uv pip install "git+https://github.com/triton-inference-server/perf_analyzer.git@${GENAI_PERF_TAG}#subdirectory=genai-perf"
+RUN uv pip install "git+https://github.com/triton-inference-server/perf_analyzer.git@${GENAI_PERF_TAG}#subdirectory=genai-perf" \
+    -i "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
 RUN uv pip uninstall tritonclient
 
 COPY . /workspace
