@@ -1,0 +1,4 @@
+[submodule "3rd_party/vllm"]
+	path = 3rd_party/vllm
+	url = https://github.com/bytedance-iaas/vllm.git
+
