@@ -95,6 +95,11 @@ ENV LIBRARY_PATH=$LIBRARY_PATH:/usr/local/cuda/lib64 \
 ENV LIBRARY_PATH=$LIBRARY_PATH:/usr/local/lib \
     LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
 
+ARG PROXY_IP
+ARG PROXY_PORT
+ENV http_proxy=http://${PROXY_IP}:${PROXY_PORT}
+ENV https_proxy=http://${PROXY_IP}:${PROXY_PORT}
+
 WORKDIR /workspace
 RUN git clone https://github.com/NVIDIA/gdrcopy.git
 RUN PREFIX=/usr/local DESTLIB=/usr/local/lib make -C /workspace/gdrcopy lib_install
@@ -224,11 +229,6 @@ RUN printf "[safe]\n      directory=/workspace\n" > /root/.gitconfig
 RUN ln -sf /bin/bash /bin/sh
 
 ### BUILDS ###
-
-ARG PROXY_IP
-ARG PROXY_PORT
-ENV http_proxy=http://${PROXY_IP}:${PROXY_PORT}
-ENV https_proxy=http://${PROXY_IP}:${PROXY_PORT}
 
 # Rust build/dev dependencies
 RUN apt update -y && \
