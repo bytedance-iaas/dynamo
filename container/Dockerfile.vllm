@@ -225,8 +225,10 @@ RUN ln -sf /bin/bash /bin/sh
 
 ### BUILDS ###
 
-ENV RUSTUP_DIST_SERVER="https://rsproxy.cn"
-ENV RUSTUP_UPDATE_ROOT="https://rsproxy.cn/rustup"
+ARG PROXY_IP
+ARG PROXY_PORT
+ENV http_proxy=http://${PROXY_IP}:${PROXY_PORT}
+ENV https_proxy=http://${PROXY_IP}:${PROXY_PORT}
 
 # Rust build/dev dependencies
 RUN apt update -y && \
@@ -260,7 +262,6 @@ COPY LICENSE /workspace/
 COPY Cargo.toml /workspace/
 COPY Cargo.lock /workspace/
 COPY rust-toolchain.toml /workspace/
-COPY container/config.toml /root/.cargo/config
 
 COPY lib/ /workspace/lib/
 COPY components /workspace/components
@@ -326,6 +327,11 @@ COPY . /workspace
 FROM ${BASE_IMAGE}:${BASE_IMAGE_TAG} AS perf_analyzer
 
 ARG GENAI_PERF_TAG
+
+ARG PROXY_IP
+ARG PROXY_PORT
+ENV http_proxy=http://${PROXY_IP}:${PROXY_PORT}
+ENV https_proxy=http://${PROXY_IP}:${PROXY_PORT}
 
 WORKDIR /workspace
 
