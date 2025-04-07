@@ -453,7 +453,7 @@ index 0000000..a27af58
 +
 +        self.event_id_counter += 1
 diff --git a/vllm/core/scheduler.py b/vllm/core/scheduler.py
-index cf85a21..fb8ce03 100644
+index cf85a21..008e3f9 100644
 --- a/vllm/core/scheduler.py
 +++ b/vllm/core/scheduler.py
 @@ -4,13 +4,14 @@ import enum
@@ -558,7 +558,7 @@ index cf85a21..fb8ce03 100644
  
          Returns:
              SchedulerRunningOutputs.
-@@ -697,6 +717,38 @@ class Scheduler:
+@@ -697,6 +717,40 @@ class Scheduler:
          preempted: List[SequenceGroup] = ret.preempted
          swapped_out: List[SequenceGroup] = ret.swapped_out
  
@@ -574,6 +574,8 @@ index cf85a21..fb8ce03 100644
 +                finished_prefills.remove(seq_group.request_id)
 +                assert len(seq_group.seqs) == 1
 +                seq = seq_group.seqs[0]
++                # when there is one request complete remote prefill, we should run non_spec decode
++                ret.num_lookahead_slots = 0
 +                # we computed all but the last token in prefill, we need to decode the first token on decode
 +                seq_group.update_num_computed_tokens(seq.get_len() - 1)
 +                seq.status = SequenceStatus.RUNNING
@@ -597,7 +599,7 @@ index cf85a21..fb8ce03 100644
          running_queue = self.running
          assert len(self._async_stopped) == 0
          while running_queue:
-@@ -1073,6 +1125,7 @@ class Scheduler:
+@@ -1073,6 +1127,7 @@ class Scheduler:
          seq_groups: List[ScheduledSequenceGroup] = []
  
          waiting_queue = self.waiting
@@ -605,7 +607,7 @@ index cf85a21..fb8ce03 100644
  
          leftover_waiting_sequences: Deque[SequenceGroup] = deque()
          while self._passed_delay(time.time()) and waiting_queue:
-@@ -1121,8 +1174,10 @@ class Scheduler:
+@@ -1121,8 +1176,10 @@ class Scheduler:
                      True, enable_chunking)
  
              # If the sequence group cannot be allocated, stop.
@@ -617,7 +619,7 @@ index cf85a21..fb8ce03 100644
              if can_allocate == AllocStatus.LATER:
                  break
              elif can_allocate == AllocStatus.NEVER:
-@@ -1170,7 +1225,18 @@ class Scheduler:
+@@ -1170,7 +1227,18 @@ class Scheduler:
              if curr_loras is not None and lora_int_id > 0:
                  curr_loras.add(lora_int_id)
              waiting_queue.popleft()
@@ -637,7 +639,7 @@ index cf85a21..fb8ce03 100644
  
              if partial_prefill_metadata is not None:
                  partial_prefill_metadata.maybe_increment_partial_prefills(
-@@ -1214,9 +1280,10 @@ class Scheduler:
+@@ -1214,9 +1282,10 @@ class Scheduler:
              ignored_seq_groups=ignored_seq_groups,
              num_lookahead_slots=self._get_num_lookahead_slots(
                  is_prefill=True, enable_chunking=enable_chunking),
@@ -649,7 +651,7 @@ index cf85a21..fb8ce03 100644
          """Schedule queued requests.
  
          The current policy is designed to optimize the throughput. First,
-@@ -1234,6 +1301,9 @@ class Scheduler:
+@@ -1234,6 +1303,9 @@ class Scheduler:
          for seq_group in self.running:
              budget.add_num_seqs(seq_group.request_id,
                                  seq_group.get_max_num_running_seqs())
@@ -659,7 +661,7 @@ index cf85a21..fb8ce03 100644
          curr_loras = (set(
              seq_group.lora_int_id for seq_group in self.running
              if seq_group.lora_int_id > 0) if self.lora_enabled else None)
-@@ -1255,10 +1325,12 @@ class Scheduler:
+@@ -1255,10 +1327,12 @@ class Scheduler:
          # Don't schedule decodes if prefills are scheduled.
          # NOTE: If `_schedule_prefills` doesn't enable chunking, self.running
          # only contains decode requests, not chunked prefills.
@@ -674,7 +676,7 @@ index cf85a21..fb8ce03 100644
  
              # If any sequence group is preempted, do not swap in any sequence
              # group. because it means there's no slot for new running requests.
-@@ -1275,7 +1347,12 @@ class Scheduler:
+@@ -1275,7 +1349,12 @@ class Scheduler:
          self.waiting.extendleft(running_scheduled.preempted)
          # Update new running requests.
          if len(prefills.seq_groups) > 0:
@@ -688,7 +690,7 @@ index cf85a21..fb8ce03 100644
  
          self.running.extend(running_scheduled.decode_seq_groups_list)
  
-@@ -1452,12 +1529,14 @@ class Scheduler:
+@@ -1452,12 +1531,14 @@ class Scheduler:
          ]
          return finishing + not_finishing
  
@@ -705,7 +707,7 @@ index cf85a21..fb8ce03 100644
  
      def _can_append_slots(self, seq_group: SequenceGroup,
                            enable_chunking: bool) -> bool:
-@@ -1491,14 +1570,16 @@ class Scheduler:
+@@ -1491,14 +1572,16 @@ class Scheduler:
          return no_single_seq
  
      def schedule(
@@ -725,7 +727,7 @@ index cf85a21..fb8ce03 100644
          now = time.time()
  
          if not self.cache_config.enable_prefix_caching:
-@@ -1537,7 +1618,8 @@ class Scheduler:
+@@ -1537,7 +1620,8 @@ class Scheduler:
                  encoder_seq_data = None
                  cross_block_table = None
  
@@ -735,7 +737,7 @@ index cf85a21..fb8ce03 100644
                  seq_id = seq.seq_id
                  seq_data[seq_id] = seq.data
                  block_tables[seq_id] = self.block_manager.get_block_table(seq)
-@@ -1546,7 +1628,9 @@ class Scheduler:
+@@ -1546,7 +1630,9 @@ class Scheduler:
              if self.cache_config.enable_prefix_caching:
                  common_computed_block_nums = (
                      self.block_manager.get_common_computed_block_ids(
@@ -746,7 +748,7 @@ index cf85a21..fb8ce03 100644
  
              do_sample = True
              is_prompt = seq_group.is_prefill()
-@@ -1568,9 +1652,29 @@ class Scheduler:
+@@ -1568,9 +1654,29 @@ class Scheduler:
                          < seqs[0].data.get_len()):
                      do_sample = False
  
@@ -776,7 +778,7 @@ index cf85a21..fb8ce03 100644
                  seq_group_metadata = SequenceGroupMetadata(
                      request_id=seq_group.request_id,
                      is_prompt=is_prompt,
-@@ -1598,6 +1702,7 @@ class Scheduler:
+@@ -1598,6 +1704,7 @@ class Scheduler:
                          if scheduler_outputs.num_prefill_groups > 0 else None),
                      mm_processor_kwargs=seq_group.mm_processor_kwargs,
                      prompt_adapter_request=seq_group.prompt_adapter_request,
@@ -784,7 +786,7 @@ index cf85a21..fb8ce03 100644
                  )
              else:
                  # When SPMD mode is enabled, we only send delta data except for
-@@ -1696,10 +1801,16 @@ class Scheduler:
+@@ -1696,10 +1803,16 @@ class Scheduler:
  
              self._async_stopped.clear()
  
@@ -2644,7 +2646,7 @@ index 5148516..f0a5b3b 100644
  
  def ensure_model_parallel_initialized(
 diff --git a/vllm/engine/llm_engine.py b/vllm/engine/llm_engine.py
-index 3d019ea..6a202aa 100644
+index 3d019ea..1de650c 100644
 --- a/vllm/engine/llm_engine.py
 +++ b/vllm/engine/llm_engine.py
 @@ -2,13 +2,17 @@
@@ -2965,7 +2967,7 @@ index 3d019ea..6a202aa 100644
 +            
              try:
 -                outputs = self.model_executor.execute_model(
-+                outputs, request_notif_counter, request_done_counter = self.model_executor.execute_model(
++                outputs, remote_prefill_result = self.model_executor.execute_model(
                      execute_model_req=execute_model_req)
                  self._skip_scheduling_next_step = False
              except InputProcessingError as e:
@@ -2980,16 +2982,16 @@ index 3d019ea..6a202aa 100644
 +                blocks_to_swap_out=[],
 +                blocks_to_copy=[])
 +
-+            outputs, request_notif_counter, request_done_counter = self.model_executor.execute_model(
++            outputs, remote_prefill_result = self.model_executor.execute_model(
 +                execute_model_req=execute_model_req)
 +            
-+        for req_id, notif_count in request_notif_counter.items():
++        for req_id, notif_count in remote_prefill_result.request_notif_counter.items():
 +            self._request_notif_counter[req_id] += notif_count
 +            if self._request_notif_counter[req_id] > -1:
 +                self._finished_prefills.add(req_id)
 +                del self._request_notif_counter[req_id]
 +
-+        for req_id, done_count in request_done_counter.items():
++        for req_id, done_count in remote_prefill_result.request_done_counter.items():
 +            self._request_done_counter[req_id] += done_count
 +            if self._request_done_counter[req_id] > -1:
 +                self._finished_transfers.add(req_id)
@@ -3683,12 +3685,12 @@ index 014e8d5..7ffac8d 100644
      """The output data of one completion output of a request.
 diff --git a/vllm/remote_prefill.py b/vllm/remote_prefill.py
 new file mode 100644
-index 0000000..3acda50
+index 0000000..67a620c
 --- /dev/null
 +++ b/vllm/remote_prefill.py
-@@ -0,0 +1,66 @@
-+from dataclasses import dataclass
-+from typing import Callable, Optional, List
+@@ -0,0 +1,78 @@
++from dataclasses import dataclass, field
++from typing import Callable, Optional, List, Dict
 +from enum import Enum
 +
 +import msgspec
@@ -3753,7 +3755,18 @@ index 0000000..3acda50
 +    decode_computed_block_ids: Optional[List[int]] = None
 +    decode_engine_id: Optional[str] = None
 +    remote_prefill_request_callback: Optional[RemotePrefillRequestCallback] = None
-\ No newline at end of file
++
++@dataclass
++class RemotePrefillResult:
++    """Remote prefill notifications and progress.
++    Args:
++        request_notif_counter: The recv kv cache notification consumed by decode worker.
++        request_done_counter: The send kv cache notification consumed by prefill worker.
++        is_pending_remote_prefill: Whether the current loop pending on kv cache transfer.
++    """
++    request_notif_counter: Dict[str, int] = field(default_factory=dict)
++    request_done_counter: Dict[str, int] = field(default_factory=dict)
++    is_pending_remote_prefill: bool = False
 diff --git a/vllm/sampling_params.py b/vllm/sampling_params.py
 index 584320e..c45093a 100644
 --- a/vllm/sampling_params.py
@@ -3883,6 +3896,217 @@ index 61867b0..3ed720b 100644
  
      @property
      def is_first_multi_step(self) -> bool:
+diff --git a/vllm/spec_decode/batch_expansion.py b/vllm/spec_decode/batch_expansion.py
+index e08ed74..13b941f 100644
+--- a/vllm/spec_decode/batch_expansion.py
++++ b/vllm/spec_decode/batch_expansion.py
+@@ -14,6 +14,7 @@ from vllm.sequence import (VLLM_INVALID_TOKEN_ID, VLLM_TOKEN_ID_ARRAY_TYPE,
+ from vllm.spec_decode.interfaces import (SpeculativeProposals,
+                                          SpeculativeScorer, SpeculativeScores)
+ from vllm.spec_decode.util import nvtx_range, split_batch_by_proposal_len
++from vllm.remote_prefill import RemotePrefillResult
+ 
+ SeqId = int
+ TargetSeqId = int
+@@ -77,9 +78,14 @@ class BatchExpansionTop1Scorer(SpeculativeScorer):
+              proposal_lens_list=proposal_lens_list,
+          )
+ 
++        remote_prefill_result = RemotePrefillResult()
++
+         target_sampler_output = self._scorer_worker.execute_model(
+             execute_model_req=execute_model_req.clone(
+                 seq_group_metadata_list=target_seq_group_metadata_list))
++        if isinstance(target_sampler_output, tuple) \
++            and len(target_sampler_output) == 2:
++            target_sampler_output, remote_prefill_result = target_sampler_output
+         assert len(target_sampler_output) == 1, "expected single-step output"
+         target_sampler_output = target_sampler_output[0]
+ 
+@@ -88,7 +94,7 @@ class BatchExpansionTop1Scorer(SpeculativeScorer):
+             return self._contract_batch_all_spec(
+                 target_sampler_output=target_sampler_output,
+                 proposals=proposals,
+-            )
++            ), remote_prefill_result
+         else:
+             # Batch has a mix of spec decode enabled and disabled seq groups
+             return self._contract_batch(
+@@ -99,7 +105,7 @@ class BatchExpansionTop1Scorer(SpeculativeScorer):
+                 non_spec_indices=non_spec_indices,
+                 spec_indices=spec_indices,
+                 k=execute_model_req.num_lookahead_slots,
+-            )
++            ), remote_prefill_result
+ 
+     def _expand_batch(
+         self,
+diff --git a/vllm/spec_decode/mqa_scorer.py b/vllm/spec_decode/mqa_scorer.py
+index 6275c46..02b8c81 100644
+--- a/vllm/spec_decode/mqa_scorer.py
++++ b/vllm/spec_decode/mqa_scorer.py
+@@ -4,6 +4,7 @@ from vllm.sequence import (ExecuteModelRequest, SequenceData,
+                            SequenceGroupMetadata, get_all_seq_ids)
+ from vllm.spec_decode.interfaces import (SpeculativeProposals,
+                                          SpeculativeScorer, SpeculativeScores)
++from vllm.remote_prefill import RemotePrefillResult
+ 
+ SeqId = int
+ TargetSeqId = int
+@@ -63,10 +64,15 @@ class MQAScorer(SpeculativeScorer):
+             )
+             target_seq_group_metadata_list.append(new_seq_group_metadata)
+ 
++        remote_prefill_result = RemotePrefillResult()
++
+         target_sampler_output = self._scorer_worker.execute_model(
+             execute_model_req=execute_model_req.clone(
+                 seq_group_metadata_list=target_seq_group_metadata_list))
+ 
++        if isinstance(target_sampler_output, tuple) and len(target_sampler_output) == 2:
++            target_sampler_output, remote_prefill_result = target_sampler_output
++
+         target_sampler_output = target_sampler_output[0]
+ 
+         k = execute_model_req.num_lookahead_slots
+@@ -156,4 +162,4 @@ class MQAScorer(SpeculativeScorer):
+                                  token_ids=all_tokens,
+                                  logprobs=all_logprobs,
+                                  hidden_states=hidden_states,
+-                                 prompt_logprobs=prompt_logprobs)
++                                 prompt_logprobs=prompt_logprobs), remote_prefill_result
+diff --git a/vllm/spec_decode/multi_step_worker.py b/vllm/spec_decode/multi_step_worker.py
+index d8d5491..15c009a 100644
+--- a/vllm/spec_decode/multi_step_worker.py
++++ b/vllm/spec_decode/multi_step_worker.py
+@@ -90,6 +90,8 @@ class MultiStepWorker(ProposerWorkerBase, DelegateWorkerBase):
+                 indices_of_seq_with_bonus_tokens)
+             model_outputs = self.execute_model(
+                 execute_model_req=expanded_request)
++            if isinstance(model_outputs, tuple) and len(model_outputs) == 2:
++                model_outputs = model_outputs[0]
+         else:
+             # Here we run multi-step directly, with every step prepared
+             # on the CPU.
+@@ -99,8 +101,10 @@ class MultiStepWorker(ProposerWorkerBase, DelegateWorkerBase):
+             if expanded_request.previous_hidden_states is not None:
+                 self.worker.model_runner.return_hidden_states = True
+             for _ in range(sample_len):
+-                model_output: List[SamplerOutput] = self.worker.execute_model(
++                model_output = self.worker.execute_model(
+                     execute_model_req=expanded_request)
++                if isinstance(model_output, tuple) and len(model_output) == 2:
++                    model_output = model_output[0]
+                 assert (len(model_output) == 1
+                         ), "composing multistep workers not supported"
+                 model_output = model_output[0]
+diff --git a/vllm/spec_decode/spec_decode_worker.py b/vllm/spec_decode/spec_decode_worker.py
+index a724bea..13a6ee0 100644
+--- a/vllm/spec_decode/spec_decode_worker.py
++++ b/vllm/spec_decode/spec_decode_worker.py
+@@ -48,6 +48,7 @@ from vllm.spec_decode.util import (Timer, create_logprobs_output,
+                                    split_batch_by_proposal_len)
+ from vllm.utils import resolve_obj_by_qualname
+ from vllm.worker.worker_base import LoRANotSupportedWorkerBase, WorkerBase
++from vllm.remote_prefill import RemotePrefillResult
+ 
+ logger = init_logger(__name__)
+ 
+@@ -391,6 +392,22 @@ class SpecDecodeWorker(LoRANotSupportedWorkerBase):
+     def load_model(self, *args, **kwargs):
+         pass
+ 
++    def initialize_nixl(self, engine_id: str) -> List[bytes]:
++        return self.scorer_worker.initialize_nixl(engine_id)
++
++    def get_nixl_agent_metadata(self) -> bytes:
++        return self.scorer_worker.get_nixl_agent_metadata()
++
++    def add_remote_nixl_metadata(self, engine_id: str, agents_metadata: List[bytes], kv_caches_base_addr: List[List[Tuple[int
++, int]]], num_blocks: int) -> str:
++        return self.scorer_worker.add_remote_nixl_metadata(engine_id, agents_metadata, kv_caches_base_addr, num_blocks)
++
++    def get_nixl_kv_caches_base_addr(self) -> List[bytes]:
++        return self.scorer_worker.get_nixl_kv_caches_base_addr()
++
++    def shutdown_nixl(self) -> None:
++        return self.scorer_worker.shutdown_nixl()
++
+     def _configure_model_sampler_for_spec_decode(self):
+         """Configure model sampler to emit GPU tensors. This allows spec decode
+         to keep data on device without transferring to CPU and serializing,
+@@ -669,8 +686,13 @@ class SpecDecodeWorker(LoRANotSupportedWorkerBase):
+         not called, meaning that the kv-cache in proposer for requests is not
+         updated, so they cannot enable spec decode in the rest decoding.
+         """
+-
++        remote_prefill_result = RemotePrefillResult()
+         sampler_output = self.scorer_worker.execute_model(execute_model_req)
++        if isinstance(sampler_output, tuple) and len(sampler_output) == 2:
++            sampler_output, remote_prefill_result = sampler_output
++            if remote_prefill_result.is_pending_remote_prefill:
++                return sampler_output, remote_prefill_result
++
+         assert len(sampler_output) == 1
+         sampler_output = sampler_output[0]
+ 
+@@ -700,9 +722,11 @@ class SpecDecodeWorker(LoRANotSupportedWorkerBase):
+             # We prepare the prefill hidden states here so that there no
+             # additional complexity in worker for spec_decode vs non_spec_decode
+             # flow and execute_model doesn't need additional modifications.
++            previous_hidden_states = hidden_states \
++                if sampler_output.prefill_hidden_states is None \
++                    else sampler_output.prefill_hidden_states
+             execute_model_req.previous_hidden_states = \
+-                prepare_prefill_hidden_states(
+-                    sampler_output.prefill_hidden_states)
++                prepare_prefill_hidden_states(previous_hidden_states)
+             for i in range(self._num_spec_prefill_steps):
+                 execute_model_req.spec_step_idx = i
+                 self.proposer_worker.execute_model(execute_model_req)
+@@ -717,7 +741,7 @@ class SpecDecodeWorker(LoRANotSupportedWorkerBase):
+         sampler_output.sampled_token_probs = None
+         sampler_output.sampled_token_ids = None
+         sampler_output.logprobs = None
+-        return sampler_output_to_return
++        return sampler_output_to_return, remote_prefill_result
+ 
+     def _run_non_driver_rank(self) -> bool:
+         """Run proposer and verifier model in non-driver workers. This is used
+@@ -736,7 +760,11 @@ class SpecDecodeWorker(LoRANotSupportedWorkerBase):
+         # In case of prefill, scorer_worker has to be run before proposer so
+         # that the hidden states can be propagated to proposer when needed.
+         if data["no_spec"]:
+-            self.scorer_worker.execute_model()
++            sampler_output = self.scorer_worker.execute_model()
++            if isinstance(sampler_output, tuple) and len(sampler_output) == 2:
++                sampler_output, remote_prefill_result = sampler_output
++                if remote_prefill_result.is_pending_remote_prefill:
++                    return True
+ 
+         if not data["disable_all_speculation"]:
+             # Even if num_lookahead_slots is zero, we want to run the
+@@ -789,9 +817,10 @@ class SpecDecodeWorker(LoRANotSupportedWorkerBase):
+                                "workers generate no tokens")
+ 
+         execute_model_req.previous_hidden_states = None
++        remote_prefill_result = RemotePrefillResult()
+ 
+         with Timer() as scoring_timer:
+-            proposal_scores = self.scorer.score_proposals(
++            proposal_scores, remote_prefill_result = self.scorer.score_proposals(
+                 execute_model_req,
+                 proposals,
+             )
+@@ -831,7 +860,7 @@ class SpecDecodeWorker(LoRANotSupportedWorkerBase):
+             prompt_logprobs=proposal_scores.prompt_logprobs
+             if not self._disable_logprobs else None,
+             k=execute_model_req.num_lookahead_slots,
+-            stage_times=stage_times)
++            stage_times=stage_times), remote_prefill_result
+ 
+     @nvtx_range("spec_decode_worker._verify_tokens")
+     def _verify_tokens(
 diff --git a/vllm/worker/model_runner.py b/vllm/worker/model_runner.py
 index 473bd90..27db40f 100644
 --- a/vllm/worker/model_runner.py
@@ -4000,7 +4224,7 @@ index ad94a6a..6768919 100644
  
      @torch.inference_mode()
 diff --git a/vllm/worker/worker_base.py b/vllm/worker/worker_base.py
-index e5662e6..ee75155 100644
+index e5662e6..9220574 100644
 --- a/vllm/worker/worker_base.py
 +++ b/vllm/worker/worker_base.py
 @@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union
@@ -4016,7 +4240,7 @@ index e5662e6..ee75155 100644
                                             ModelRunnerBase,
                                             ModelRunnerInputBase)
 +from vllm.distributed.device_communicators.nixl import DynamoNixlConnector
-+from vllm.remote_prefill import MemoryOpType
++from vllm.remote_prefill import MemoryOpType, RemotePrefillResult
  
  logger = init_logger(__name__)
  
@@ -4092,16 +4316,18 @@ index e5662e6..ee75155 100644
  
      def _get_driver_input_and_broadcast(
          self, execute_model_req: ExecuteModelRequest
-@@ -403,49 +431,89 @@ class LocalOrDistributedWorkerBase(WorkerBase):
+@@ -401,51 +429,92 @@ class LocalOrDistributedWorkerBase(WorkerBase):
+             kwargs["spec_step_idx"] = execute_model_req.spec_step_idx
+ 
          self.execute_worker(worker_input)
++        remote_prefill_result = RemotePrefillResult()
  
          # If there is no input, we don't need to execute the model.
 -        if worker_input.num_seq_groups == 0:
 -            return []
 +        if worker_input.num_seq_groups > 0:
-+
 +            self._read_blocks(worker_input)
-+
++            remote_prefill_result.is_pending_remote_prefill = False
 +            intermediate_tensors = None
 +            orig_model_execute_time = 0.0
 +            if not get_pp_group().is_first_rank:
@@ -4177,6 +4403,7 @@ index e5662e6..ee75155 100644
 -                o.model_execute_time = (orig_model_execute_time +
 -                                        model_execute_time)
 +        else:
++            remote_prefill_result.is_pending_remote_prefill = True
 +            output = []
 +
 +        # collect kv transfer notifications from non driver workers
@@ -4190,7 +4417,7 @@ index e5662e6..ee75155 100644
 +            else:
 +                for i in range(1, get_tp_group().world_size):
 +                    all_new_notifs.append(get_tp_group().recv_object(src=i))
- 
++
 +            request_notif_counter = defaultdict(int)
 +            for notifs in all_new_notifs:
 +                for req_ids in notifs.values():
@@ -4204,12 +4431,12 @@ index e5662e6..ee75155 100644
 +            for req_id in self.nixl_connector.get_done_tranfers():
 +                request_done_counter[req_id] += 1
 +
-+        else:
-+            request_notif_counter = {}
-+            request_done_counter = {}
++            remote_prefill_result.request_notif_counter = request_notif_counter
++            remote_prefill_result.request_done_counter = request_done_counter
+ 
          # output is List[SamplerOutput]
 -        return output
-+        return output, request_notif_counter, request_done_counter
++        return output, remote_prefill_result
 +    
 +    def _read_blocks(self, worker_input: WorkerInput) -> None:
 +        pass
