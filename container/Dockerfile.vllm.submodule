@@ -95,6 +95,11 @@ ENV LIBRARY_PATH=$LIBRARY_PATH:/usr/local/cuda/lib64 \
 ENV LIBRARY_PATH=$LIBRARY_PATH:/usr/local/lib \
     LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib
 
+ARG PROXY_IP
+ARG PROXY_PORT
+ENV http_proxy=http://${PROXY_IP}:${PROXY_PORT}
+ENV https_proxy=http://${PROXY_IP}:${PROXY_PORT}
+
 WORKDIR /workspace
 RUN git clone https://github.com/NVIDIA/gdrcopy.git
 RUN PREFIX=/usr/local DESTLIB=/usr/local/lib make -C /workspace/gdrcopy lib_install
@@ -231,11 +236,6 @@ ENV RUSTUP_HOME=/usr/local/rustup \
     RUST_VERSION=1.86.0 \
     RUSTARCH=x86_64-unknown-linux-gnu
 
-ARG PROXY_IP
-ARG PROXY_PORT
-ENV http_proxy=http://${PROXY_IP}:${PROXY_PORT}
-ENV https_proxy=http://${PROXY_IP}:${PROXY_PORT}
-
 RUN wget --tries=3 --waitretry=5 "https://static.rust-lang.org/rustup/archive/1.28.1/${RUSTARCH}/rustup-init" && \
     echo "a3339fb004c3d0bb9862ba0bce001861fe5cbde9c10d16591eb3f39ee6cd3e7f *rustup-init" | sha256sum -c - && \
     chmod +x rustup-init && \
@@ -320,6 +320,11 @@ FROM ${BASE_IMAGE}:${BASE_IMAGE_TAG} AS perf_analyzer
 ARG GENAI_PERF_TAG
 
 WORKDIR /workspace
+
+ARG PROXY_IP
+ARG PROXY_PORT
+ENV http_proxy=http://${PROXY_IP}:${PROXY_PORT}
+ENV https_proxy=http://${PROXY_IP}:${PROXY_PORT}
 
 # Build and install Perf Analyzer for benchmarking
 RUN apt-get update -y && apt-get -y install cmake g++ libssl-dev python3 rapidjson-dev zlib1g-dev
