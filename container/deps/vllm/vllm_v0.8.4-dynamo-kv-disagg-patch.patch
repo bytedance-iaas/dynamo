@@ -1,5 +1,5 @@
 diff --git a/vllm/attention/backends/mla/common.py b/vllm/attention/backends/mla/common.py
-index 54278f5f6..7eaf92feb 100644
+index 54278f5..7eaf92f 100644
 --- a/vllm/attention/backends/mla/common.py
 +++ b/vllm/attention/backends/mla/common.py
 @@ -300,7 +300,8 @@ class MLACommonState(AttentionState, Generic[T]):
@@ -24,7 +24,7 @@ index 54278f5f6..7eaf92feb 100644
          if self.chunked_prefill_enabled or self.enable_prefix_caching:
              attn_state = self.input_builder.runner.attn_state
 diff --git a/vllm/config.py b/vllm/config.py
-index 2912361ee..eea9cb65d 100644
+index 2912361..eea9cb6 100644
 --- a/vllm/config.py
 +++ b/vllm/config.py
 @@ -1,4 +1,17 @@
@@ -83,7 +83,7 @@ index 2912361ee..eea9cb65d 100644
      def is_kv_transfer_instance(self) -> bool:
          return self.kv_connector is not None and \
 diff --git a/vllm/core/block/cpu_gpu_block_allocator.py b/vllm/core/block/cpu_gpu_block_allocator.py
-index d64142e77..6279767cb 100644
+index d64142e..6279767 100644
 --- a/vllm/core/block/cpu_gpu_block_allocator.py
 +++ b/vllm/core/block/cpu_gpu_block_allocator.py
 @@ -1,4 +1,17 @@
@@ -166,7 +166,7 @@ index d64142e77..6279767cb 100644
          self._swap_mapping: Dict[int, int] = {}
          self._null_block: Optional[Block] = None
 diff --git a/vllm/core/block/naive_block.py b/vllm/core/block/naive_block.py
-index c388366b8..3c223b519 100644
+index c388366..3c223b5 100644
 --- a/vllm/core/block/naive_block.py
 +++ b/vllm/core/block/naive_block.py
 @@ -1,8 +1,21 @@
@@ -221,7 +221,7 @@ index c388366b8..3c223b519 100644
      def free(self, block: Block, keep_block_object: bool = False) -> None:
          # Release the physical block id
 diff --git a/vllm/core/block/prefix_caching_block.py b/vllm/core/block/prefix_caching_block.py
-index 1ca9e49da..26fabb243 100644
+index 1ca9e49..26fabb2 100644
 --- a/vllm/core/block/prefix_caching_block.py
 +++ b/vllm/core/block/prefix_caching_block.py
 @@ -1,10 +1,23 @@
@@ -314,7 +314,7 @@ index 1ca9e49da..26fabb243 100644
      def _track_block_id(self, block_id: Optional[BlockId],
                          computed: bool) -> None:
 diff --git a/vllm/core/block_manager.py b/vllm/core/block_manager.py
-index c6bf6d163..c5514f935 100644
+index c6bf6d1..c5514f9 100644
 --- a/vllm/core/block_manager.py
 +++ b/vllm/core/block_manager.py
 @@ -1,4 +1,17 @@
@@ -407,7 +407,7 @@ index c6bf6d163..c5514f935 100644
              assert encoder_seq is not None
 diff --git a/vllm/core/event_manager.py b/vllm/core/event_manager.py
 new file mode 100644
-index 000000000..79eb8db67
+index 0000000..79eb8db
 --- /dev/null
 +++ b/vllm/core/event_manager.py
 @@ -0,0 +1,121 @@
@@ -533,7 +533,7 @@ index 000000000..79eb8db67
 +
 +        self.event_id_counter += 1
 diff --git a/vllm/core/scheduler.py b/vllm/core/scheduler.py
-index cf85a2135..f9087b5c3 100644
+index cf85a21..b497e2b 100644
 --- a/vllm/core/scheduler.py
 +++ b/vllm/core/scheduler.py
 @@ -1,16 +1,30 @@
@@ -663,7 +663,7 @@ index cf85a2135..f9087b5c3 100644
          Returns:
              SchedulerRunningOutputs.
          """
-@@ -697,6 +730,38 @@ class Scheduler:
+@@ -697,6 +730,40 @@ class Scheduler:
          preempted: List[SequenceGroup] = ret.preempted
          swapped_out: List[SequenceGroup] = ret.swapped_out
  
@@ -679,6 +679,8 @@ index cf85a2135..f9087b5c3 100644
 +                finished_prefills.remove(seq_group.request_id)
 +                assert len(seq_group.seqs) == 1
 +                seq = seq_group.seqs[0]
++                # when there is one request complete remote prefill, we should run non_spec decode
++                ret.num_lookahead_slots = 0
 +                # we computed all but the last token in prefill, we need to decode the first token on decode
 +                seq_group.update_num_computed_tokens(seq.get_len() - 1)
 +                seq.status = SequenceStatus.RUNNING
@@ -702,7 +704,7 @@ index cf85a2135..f9087b5c3 100644
          running_queue = self.running
          assert len(self._async_stopped) == 0
          while running_queue:
-@@ -1073,6 +1138,7 @@ class Scheduler:
+@@ -1073,6 +1140,7 @@ class Scheduler:
          seq_groups: List[ScheduledSequenceGroup] = []
  
          waiting_queue = self.waiting
@@ -710,7 +712,7 @@ index cf85a2135..f9087b5c3 100644
  
          leftover_waiting_sequences: Deque[SequenceGroup] = deque()
          while self._passed_delay(time.time()) and waiting_queue:
-@@ -1121,8 +1187,10 @@ class Scheduler:
+@@ -1121,8 +1189,10 @@ class Scheduler:
                      True, enable_chunking)
  
              # If the sequence group cannot be allocated, stop.
@@ -722,7 +724,7 @@ index cf85a2135..f9087b5c3 100644
              if can_allocate == AllocStatus.LATER:
                  break
              elif can_allocate == AllocStatus.NEVER:
-@@ -1170,7 +1238,18 @@ class Scheduler:
+@@ -1170,7 +1240,18 @@ class Scheduler:
              if curr_loras is not None and lora_int_id > 0:
                  curr_loras.add(lora_int_id)
              waiting_queue.popleft()
@@ -742,7 +744,7 @@ index cf85a2135..f9087b5c3 100644
  
              if partial_prefill_metadata is not None:
                  partial_prefill_metadata.maybe_increment_partial_prefills(
-@@ -1214,9 +1293,10 @@ class Scheduler:
+@@ -1214,9 +1295,10 @@ class Scheduler:
              ignored_seq_groups=ignored_seq_groups,
              num_lookahead_slots=self._get_num_lookahead_slots(
                  is_prefill=True, enable_chunking=enable_chunking),
@@ -754,7 +756,7 @@ index cf85a2135..f9087b5c3 100644
          """Schedule queued requests.
  
          The current policy is designed to optimize the throughput. First,
-@@ -1234,6 +1314,9 @@ class Scheduler:
+@@ -1234,6 +1316,9 @@ class Scheduler:
          for seq_group in self.running:
              budget.add_num_seqs(seq_group.request_id,
                                  seq_group.get_max_num_running_seqs())
@@ -764,7 +766,7 @@ index cf85a2135..f9087b5c3 100644
          curr_loras = (set(
              seq_group.lora_int_id for seq_group in self.running
              if seq_group.lora_int_id > 0) if self.lora_enabled else None)
-@@ -1258,7 +1341,9 @@ class Scheduler:
+@@ -1258,7 +1343,9 @@ class Scheduler:
          if len(prefills.seq_groups) == 0:
              running_scheduled = self._schedule_running(budget,
                                                         curr_loras,
@@ -775,7 +777,7 @@ index cf85a2135..f9087b5c3 100644
  
              # If any sequence group is preempted, do not swap in any sequence
              # group. because it means there's no slot for new running requests.
-@@ -1275,7 +1360,12 @@ class Scheduler:
+@@ -1275,7 +1362,12 @@ class Scheduler:
          self.waiting.extendleft(running_scheduled.preempted)
          # Update new running requests.
          if len(prefills.seq_groups) > 0:
@@ -789,7 +791,7 @@ index cf85a2135..f9087b5c3 100644
  
          self.running.extend(running_scheduled.decode_seq_groups_list)
  
-@@ -1452,12 +1542,14 @@ class Scheduler:
+@@ -1452,12 +1544,14 @@ class Scheduler:
          ]
          return finishing + not_finishing
  
@@ -806,7 +808,7 @@ index cf85a2135..f9087b5c3 100644
  
      def _can_append_slots(self, seq_group: SequenceGroup,
                            enable_chunking: bool) -> bool:
-@@ -1491,14 +1583,16 @@ class Scheduler:
+@@ -1491,14 +1585,16 @@ class Scheduler:
          return no_single_seq
  
      def schedule(
@@ -826,7 +828,7 @@ index cf85a2135..f9087b5c3 100644
          now = time.time()
  
          if not self.cache_config.enable_prefix_caching:
-@@ -1537,7 +1631,8 @@ class Scheduler:
+@@ -1537,7 +1633,8 @@ class Scheduler:
                  encoder_seq_data = None
                  cross_block_table = None
  
@@ -836,7 +838,7 @@ index cf85a2135..f9087b5c3 100644
                  seq_id = seq.seq_id
                  seq_data[seq_id] = seq.data
                  block_tables[seq_id] = self.block_manager.get_block_table(seq)
-@@ -1546,7 +1641,9 @@ class Scheduler:
+@@ -1546,7 +1643,9 @@ class Scheduler:
              if self.cache_config.enable_prefix_caching:
                  common_computed_block_nums = (
                      self.block_manager.get_common_computed_block_ids(
@@ -847,7 +849,7 @@ index cf85a2135..f9087b5c3 100644
  
              do_sample = True
              is_prompt = seq_group.is_prefill()
-@@ -1568,9 +1665,30 @@ class Scheduler:
+@@ -1568,9 +1667,30 @@ class Scheduler:
                          < seqs[0].data.get_len()):
                      do_sample = False
  
@@ -878,7 +880,7 @@ index cf85a2135..f9087b5c3 100644
                  seq_group_metadata = SequenceGroupMetadata(
                      request_id=seq_group.request_id,
                      is_prompt=is_prompt,
-@@ -1598,6 +1716,7 @@ class Scheduler:
+@@ -1598,6 +1718,7 @@ class Scheduler:
                          if scheduler_outputs.num_prefill_groups > 0 else None),
                      mm_processor_kwargs=seq_group.mm_processor_kwargs,
                      prompt_adapter_request=seq_group.prompt_adapter_request,
@@ -886,7 +888,7 @@ index cf85a2135..f9087b5c3 100644
                  )
              else:
                  # When SPMD mode is enabled, we only send delta data except for
-@@ -1696,10 +1815,16 @@ class Scheduler:
+@@ -1696,10 +1817,16 @@ class Scheduler:
  
              self._async_stopped.clear()
  
@@ -907,7 +909,7 @@ index cf85a2135..f9087b5c3 100644
          self,
 diff --git a/vllm/distributed/device_communicators/kv_rearrange.py b/vllm/distributed/device_communicators/kv_rearrange.py
 new file mode 100644
-index 000000000..a2f9ce99e
+index 0000000..a2f9ce9
 --- /dev/null
 +++ b/vllm/distributed/device_communicators/kv_rearrange.py
 @@ -0,0 +1,125 @@
@@ -1039,7 +1041,7 @@ index 000000000..a2f9ce99e
 \ No newline at end of file
 diff --git a/vllm/distributed/device_communicators/nixl.py b/vllm/distributed/device_communicators/nixl.py
 new file mode 100644
-index 000000000..bd4ac984e
+index 0000000..bd4ac98
 --- /dev/null
 +++ b/vllm/distributed/device_communicators/nixl.py
 @@ -0,0 +1,445 @@
@@ -1490,7 +1492,7 @@ index 000000000..bd4ac984e
 +        return done_req_ids
 diff --git a/vllm/distributed/kv_transfer/kv_connector/dynamo_connector.py b/vllm/distributed/kv_transfer/kv_connector/dynamo_connector.py
 new file mode 100644
-index 000000000..418fc7154
+index 0000000..418fc71
 --- /dev/null
 +++ b/vllm/distributed/kv_transfer/kv_connector/dynamo_connector.py
 @@ -0,0 +1,363 @@
@@ -1858,7 +1860,7 @@ index 000000000..418fc7154
 +        self.config.kv_consumers_pipeline_parallel_size = kv_config_enhanced["kv_consumers_pipeline_parallel_size"]
 +        self.config.kv_producers_parallel_size = kv_config_enhanced["kv_producers_parallel_size"]
 diff --git a/vllm/distributed/kv_transfer/kv_connector/factory.py b/vllm/distributed/kv_transfer/kv_connector/factory.py
-index e37ce6dc7..f1ba144c7 100644
+index e37ce6d..f1ba144 100644
 --- a/vllm/distributed/kv_transfer/kv_connector/factory.py
 +++ b/vllm/distributed/kv_transfer/kv_connector/factory.py
 @@ -1,4 +1,17 @@
@@ -1896,7 +1898,7 @@ index e37ce6dc7..f1ba144c7 100644
  
  # Register various connectors here.
 diff --git a/vllm/distributed/kv_transfer/kv_connector/simple_connector.py b/vllm/distributed/kv_transfer/kv_connector/simple_connector.py
-index 49b97d7b5..c77c570ea 100644
+index 49b97d7..c77c570 100644
 --- a/vllm/distributed/kv_transfer/kv_connector/simple_connector.py
 +++ b/vllm/distributed/kv_transfer/kv_connector/simple_connector.py
 @@ -1,4 +1,17 @@
@@ -2204,7 +2206,7 @@ index 49b97d7b5..c77c570ea 100644
 +        self.config.kv_consumers_pipeline_parallel_size = kv_config_enhanced["kv_consumers_pipeline_parallel_size"]
 +        self.config.kv_producers_parallel_size = kv_config_enhanced["kv_producers_parallel_size"]
 diff --git a/vllm/distributed/kv_transfer/kv_lookup_buffer/simple_buffer.py b/vllm/distributed/kv_transfer/kv_lookup_buffer/simple_buffer.py
-index 10bbfe1dd..8268bf3eb 100644
+index 10bbfe1..8268bf3 100644
 --- a/vllm/distributed/kv_transfer/kv_lookup_buffer/simple_buffer.py
 +++ b/vllm/distributed/kv_transfer/kv_lookup_buffer/simple_buffer.py
 @@ -1,4 +1,17 @@
@@ -2425,7 +2427,7 @@ index 10bbfe1dd..8268bf3eb 100644
          else:
              # TODO: have a explicit close signal and have a explicit way to
 diff --git a/vllm/distributed/kv_transfer/kv_pipe/base.py b/vllm/distributed/kv_transfer/kv_pipe/base.py
-index 40589fb3e..a3991c39d 100644
+index 40589fb..a3991c3 100644
 --- a/vllm/distributed/kv_transfer/kv_pipe/base.py
 +++ b/vllm/distributed/kv_transfer/kv_pipe/base.py
 @@ -1,4 +1,17 @@
@@ -2466,7 +2468,7 @@ index 40589fb3e..a3991c39d 100644
          Returns:
 diff --git a/vllm/distributed/kv_transfer/kv_pipe/dynamo_nccl_pipe.py b/vllm/distributed/kv_transfer/kv_pipe/dynamo_nccl_pipe.py
 new file mode 100644
-index 000000000..ca5345359
+index 0000000..ca53453
 --- /dev/null
 +++ b/vllm/distributed/kv_transfer/kv_pipe/dynamo_nccl_pipe.py
 @@ -0,0 +1,139 @@
@@ -2610,7 +2612,7 @@ index 000000000..ca5345359
 +                # dtype = getattr(torch, dtype)
 +                self._receive_tensor(tensor_id, rank)
 diff --git a/vllm/distributed/kv_transfer/kv_pipe/pynccl_pipe.py b/vllm/distributed/kv_transfer/kv_pipe/pynccl_pipe.py
-index e8bf607eb..fa5543fa9 100644
+index e8bf607..fa5543f 100644
 --- a/vllm/distributed/kv_transfer/kv_pipe/pynccl_pipe.py
 +++ b/vllm/distributed/kv_transfer/kv_pipe/pynccl_pipe.py
 @@ -1,4 +1,17 @@
@@ -2806,7 +2808,7 @@ index e8bf607eb..fa5543fa9 100644
      def close(self):
          """
 diff --git a/vllm/distributed/kv_transfer/kv_transfer_agent.py b/vllm/distributed/kv_transfer/kv_transfer_agent.py
-index 1e80e0bd7..f06c7a5f6 100644
+index 1e80e0b..f06c7a5 100644
 --- a/vllm/distributed/kv_transfer/kv_transfer_agent.py
 +++ b/vllm/distributed/kv_transfer/kv_transfer_agent.py
 @@ -1,4 +1,17 @@
@@ -2845,7 +2847,7 @@ index 1e80e0bd7..f06c7a5f6 100644
      def send_kv_caches_and_hidden_states(
          self,
 diff --git a/vllm/distributed/parallel_state.py b/vllm/distributed/parallel_state.py
-index e0eeeffb8..9010c6966 100644
+index e0eeeff..9010c69 100644
 --- a/vllm/distributed/parallel_state.py
 +++ b/vllm/distributed/parallel_state.py
 @@ -1,4 +1,17 @@
@@ -2877,7 +2879,7 @@ index e0eeeffb8..9010c6966 100644
  
  def ensure_model_parallel_initialized(
 diff --git a/vllm/engine/arg_utils.py b/vllm/engine/arg_utils.py
-index 975afe5ad..2208abea0 100644
+index 975afe5..2208abe 100644
 --- a/vllm/engine/arg_utils.py
 +++ b/vllm/engine/arg_utils.py
 @@ -1159,7 +1159,7 @@ class EngineArgs:
@@ -2890,7 +2892,7 @@ index 975afe5ad..2208abea0 100644
              use_v1 = True
  
 diff --git a/vllm/engine/llm_engine.py b/vllm/engine/llm_engine.py
-index 54f7b8fb6..0559f9db2 100644
+index 54f7b8f..70e4894 100644
 --- a/vllm/engine/llm_engine.py
 +++ b/vllm/engine/llm_engine.py
 @@ -1,11 +1,28 @@
@@ -3220,7 +3222,7 @@ index 54f7b8fb6..0559f9db2 100644
 +
              try:
 -                outputs = self.model_executor.execute_model(
-+                outputs, request_notif_counter, request_done_counter = self.model_executor.execute_model(
++                outputs, remote_prefill_result = self.model_executor.execute_model(
                      execute_model_req=execute_model_req)
                  self._skip_scheduling_next_step = False
              except InputProcessingError as e:
@@ -3243,16 +3245,16 @@ index 54f7b8fb6..0559f9db2 100644
 +                blocks_to_swap_out=[],
 +                blocks_to_copy=[])
 +
-+            outputs, request_notif_counter, request_done_counter = self.model_executor.execute_model(
++            outputs, remote_prefill_result = self.model_executor.execute_model(
 +                execute_model_req=execute_model_req)
 +            
-+        for req_id, notif_count in request_notif_counter.items():
++        for req_id, notif_count in remote_prefill_result.request_notif_counter.items():
 +            self._request_notif_counter[req_id] += notif_count
 +            if self._request_notif_counter[req_id] > -1:
 +                self._finished_prefills.add(req_id)
 +                del self._request_notif_counter[req_id]
 +
-+        for req_id, done_count in request_done_counter.items():
++        for req_id, done_count in remote_prefill_result.request_done_counter.items():
 +            self._request_done_counter[req_id] += done_count
 +            if self._request_done_counter[req_id] > -1:
 +                self._finished_transfers.add(req_id)
@@ -3270,7 +3272,7 @@ index 54f7b8fb6..0559f9db2 100644
  
      def _abort_and_cache_schedule(
 diff --git a/vllm/engine/multiprocessing/__init__.py b/vllm/engine/multiprocessing/__init__.py
-index cafd8150b..ab1c11329 100644
+index cafd815..ab1c113 100644
 --- a/vllm/engine/multiprocessing/__init__.py
 +++ b/vllm/engine/multiprocessing/__init__.py
 @@ -1,4 +1,17 @@
@@ -3359,7 +3361,7 @@ index cafd8150b..ab1c11329 100644
 +    gpu_cache_usage_perc: float
 +    gpu_prefix_cache_hit_rate: float
 diff --git a/vllm/engine/multiprocessing/client.py b/vllm/engine/multiprocessing/client.py
-index f058b1329..fa99e635c 100644
+index f058b13..fa99e63 100644
 --- a/vllm/engine/multiprocessing/client.py
 +++ b/vllm/engine/multiprocessing/client.py
 @@ -1,4 +1,17 @@
@@ -3642,7 +3644,7 @@ index f058b1329..fa99e635c 100644
 +    def set_metrics_publisher(self, metrics_publisher):
 +        self.metrics_publisher = metrics_publisher
 diff --git a/vllm/engine/multiprocessing/engine.py b/vllm/engine/multiprocessing/engine.py
-index 6ed5ae0a9..af4bd942b 100644
+index 6ed5ae0..af4bd94 100644
 --- a/vllm/engine/multiprocessing/engine.py
 +++ b/vllm/engine/multiprocessing/engine.py
 @@ -1,13 +1,27 @@
@@ -3890,8 +3892,131 @@ index 6ed5ae0a9..af4bd942b 100644
  
              if self.log_requests:
                  logger.info("Added request %s.", request.request_id)
+diff --git a/vllm/entrypoints/openai/api_server.py b/vllm/entrypoints/openai/api_server.py
+index 6a8bdd0..94d9db2 100644
+--- a/vllm/entrypoints/openai/api_server.py
++++ b/vllm/entrypoints/openai/api_server.py
+@@ -58,9 +58,12 @@ from vllm.entrypoints.openai.protocol import (ChatCompletionRequest,
+                                               EmbeddingResponseData,
+                                               ErrorResponse,
+                                               LoadLoRAAdapterRequest,
++                                              NixlMetadataRequest,
+                                               PoolingChatRequest,
+                                               PoolingCompletionRequest,
+                                               PoolingRequest, PoolingResponse,
++                                              RemotePrefillEpRequest,
++                                              RemotePrefillGenerateRequest,
+                                               RerankRequest, RerankResponse,
+                                               ScoreRequest, ScoreResponse,
+                                               TokenizeRequest,
+@@ -72,6 +75,7 @@ from vllm.entrypoints.openai.protocol import (ChatCompletionRequest,
+ from vllm.entrypoints.openai.serving_chat import OpenAIServingChat
+ from vllm.entrypoints.openai.serving_completion import OpenAIServingCompletion
+ from vllm.entrypoints.openai.serving_embedding import OpenAIServingEmbedding
++from vllm.entrypoints.openai.serving_remote_prefill import OpenAIServingRemotePrefill
+ from vllm.entrypoints.openai.serving_engine import OpenAIServing
+ from vllm.entrypoints.openai.serving_models import (BaseModelPath,
+                                                     OpenAIServingModels)
+@@ -386,6 +390,8 @@ def transcription(request: Request) -> OpenAIServingTranscription:
+ def engine_client(request: Request) -> EngineClient:
+     return request.app.state.engine_client
+ 
++def remote_prefill(request: Request) -> OpenAIServingRemotePrefill:
++    return request.app.state.openai_serving_remote_prefill
+ 
+ @router.get("/health")
+ async def health(raw_request: Request) -> Response:
+@@ -473,7 +479,10 @@ async def create_chat_completion(request: ChatCompletionRequest,
+         return base(raw_request).create_error_response(
+             message="The model does not support Chat Completions API")
+ 
+-    generator = await handler.create_chat_completion(request, raw_request)
++    remote_prefill_handler = remote_prefill(raw_request)
++    remote_prefill_params = remote_prefill_handler.get_remote_prefill_params(raw_request)
++
++    generator = await handler.create_chat_completion(request, raw_request, remote_prefill_params)
+ 
+     if isinstance(generator, ErrorResponse):
+         return JSONResponse(content=generator.model_dump(),
+@@ -659,6 +668,41 @@ async def do_rerank_v1(request: RerankRequest, raw_request: Request):
+ async def do_rerank_v2(request: RerankRequest, raw_request: Request):
+     return await do_rerank(request, raw_request)
+ 
++@router.get("/nixl_metadata")
++async def get_nixl_metadata(raw_request: Request):
++    handler = remote_prefill(raw_request)
++
++    nixl_metdata = handler.nixl_metadata()
++    return JSONResponse(content=nixl_metdata.model_dump())
++
++@router.post("/remote_nixl_metadata", dependencies=[Depends(validate_json_request)])
++async def add_remote_nixl_metadata(request: NixlMetadataRequest ,raw_request: Request):
++    handler = remote_prefill(raw_request)
++    await handler.remote_nixl_metadata(request)
++    return Response(status_code=200)
++
++@router.post("/remote_prefill", dependencies=[Depends(validate_json_request)])
++@with_cancellation
++@load_aware_call
++async def remote_prefill_generate(request: RemotePrefillGenerateRequest, raw_request: Request):
++    handler = remote_prefill(raw_request)
++    handler.remote_prefill(request)
++    return Response(status_code=200)
++
++@router.post("/add_remote_prefill_eps", dependencies=[Depends(validate_json_request)])
++async def add_remote_prefill_eps(request: RemotePrefillEpRequest ,raw_request: Request):
++    handler = remote_prefill(raw_request)
++    try:
++        await handler.add_remote_prefill_eps(request)
++    except (ValueError) as e:
++        return JSONResponse(content={"error": str(e)}, status_code=400)
++    return Response(status_code=200)
++
++@router.post("/remove_remote_prefill_eps", dependencies=[Depends(validate_json_request)])
++async def remove_remote_prefill_eps(request: RemotePrefillEpRequest ,raw_request: Request):
++    handler = remote_prefill(raw_request)
++    await handler.remove_remote_prefill_eps(request)
++    return Response(status_code=200)
+ 
+ TASK_HANDLERS: dict[str, dict[str, tuple]] = {
+     "generate": {
+@@ -1011,6 +1055,13 @@ async def init_app_state(
+         state.openai_serving_models,
+         request_logger=request_logger,
+     ) if model_config.runner_type == "transcription" else None
++    # remote prefill
++    state.openai_serving_remote_prefill = OpenAIServingRemotePrefill(
++        engine_client,
++        model_config,
++        state.openai_serving_models,
++        request_logger=request_logger,
++    )
+     state.task = model_config.task
+ 
+     state.enable_server_load_tracking = args.enable_server_load_tracking
+diff --git a/vllm/entrypoints/openai/protocol.py b/vllm/entrypoints/openai/protocol.py
+index 4639b4c..245e1b0 100644
+--- a/vllm/entrypoints/openai/protocol.py
++++ b/vllm/entrypoints/openai/protocol.py
+@@ -1716,3 +1716,15 @@ class TranscriptionResponseVerbose(OpenAIBaseModel):
+ 
+     words: Optional[list[TranscriptionWord]] = None
+     """Extracted words and their corresponding timestamps."""
++
++class NixlMetadataResponse(BaseModel):
++    metadata: str
++
++class NixlMetadataRequest(BaseModel):
++    metadata: str
++
++class RemotePrefillGenerateRequest(BaseModel):
++    content: str
++
++class RemotePrefillEpRequest(BaseModel):
++    endpoints: list[str]
+\ No newline at end of file
 diff --git a/vllm/entrypoints/openai/serving_chat.py b/vllm/entrypoints/openai/serving_chat.py
-index dd0b67df4..f436b0752 100644
+index dd0b67d..f436b07 100644
 --- a/vllm/entrypoints/openai/serving_chat.py
 +++ b/vllm/entrypoints/openai/serving_chat.py
 @@ -1,4 +1,17 @@
@@ -3936,8 +4061,208 @@ index dd0b67df4..f436b0752 100644
                      )
  
                  generators.append(generator)
+diff --git a/vllm/entrypoints/openai/serving_remote_prefill.py b/vllm/entrypoints/openai/serving_remote_prefill.py
+new file mode 100644
+index 0000000..3e7630e
+--- /dev/null
++++ b/vllm/entrypoints/openai/serving_remote_prefill.py
+@@ -0,0 +1,194 @@
++# SPDX-License-Identifier: Apache-2.0
++
++import asyncio
++import aiohttp
++from collections import defaultdict
++from fastapi import Request
++import msgspec
++import threading
++from typing import Optional
++from urllib.parse import urlparse
++
++from vllm.config import ModelConfig
++from vllm.engine.protocol import EngineClient
++from vllm.entrypoints.logger import RequestLogger
++from vllm.remote_prefill import (RemotePrefillParams,
++                                 RemotePrefillRequest)
++
++# yapf conflicts with isort for this block
++# yapf: disable
++from vllm.entrypoints.openai.protocol import (NixlMetadataRequest,
++                                              NixlMetadataResponse,
++                                              RemotePrefillEpRequest,
++                                              RemotePrefillGenerateRequest)
++# yapf: enable
++from vllm.entrypoints.openai.serving_engine import OpenAIServing
++from vllm.entrypoints.openai.serving_models import OpenAIServingModels
++from vllm.logger import init_logger
++from vllm.inputs.data import TokensPrompt
++
++from vllm.distributed.device_communicators.nixl import NixlMetadata
++
++logger = init_logger(__name__)
++
++
++class OpenAIServingRemotePrefill(OpenAIServing):
++    """OpenAI API for remote prefill.
++
++    Handles the routes:
++    - /remote_nixl_metadata [POST]
++    - /nixl_metadata [GET]
++    - /remote_prefill [POST]
++    """
++
++    def __init__(
++        self,
++        engine_client: EngineClient,
++        model_config: ModelConfig,
++        models: OpenAIServingModels,
++        *,
++        request_logger: Optional[RequestLogger],
++    ):
++        super().__init__(
++            engine_client=engine_client,
++            model_config=model_config,
++            models=models,
++            request_logger=request_logger,
++        )
++        
++        self.remote_prefill_endpoint_map = defaultdict(int)
++        self.remote_prefill_endpoints = []
++        self.counter = 0
++        
++        self._request_queue = asyncio.Queue()
++
++        loop = asyncio.get_event_loop()
++        self._background_thread = threading.Thread(target=self.background_event_loop, daemon=True, args=(loop, ))
++        self._background_thread.start()
++        
++    def background_event_loop(self, loop):
++        asyncio.set_event_loop(loop)
++        loop.create_task(self._process_requests())
++
++    async def _process_requests(self):
++        while True:
++            request = await self._request_queue.get()
++
++            sampling_params = request.sampling_params
++            sampling_params.max_tokens = 1
++            sampling_params.min_tokens = 1
++
++            remote_prefill_params = RemotePrefillParams(
++                is_remote_decode=True,
++                decode_block_ids=request.block_ids,
++                decode_engine_id=request.engine_id,
++            )
++
++            async for _ in self.engine_client.generate(
++                request_id=request.request_id,
++                prompt=TokensPrompt(prompt_token_ids=request.prompt_token_ids),
++                sampling_params=sampling_params,
++                remote_prefill_params=remote_prefill_params,
++            ):
++                pass
++
++    def nixl_metadata(self) -> NixlMetadataResponse:
++        """Get Nixl metadata"""
++
++        metadata = str(
++            msgspec.json.encode(self.engine_client.nixl_metadata), encoding="utf-8"
++        )
++
++        return NixlMetadataResponse(metadata=metadata)
++
++    async def remote_nixl_metadata(
++        self,
++        request: NixlMetadataRequest,
++    ):
++        """Add remote Nixl metadata"""
++        metadata = msgspec.json.decode(
++            request.metadata.encode(encoding="utf-8"), type=NixlMetadata
++        )
++
++        await self.engine_client.add_remote_nixl_metadata(metadata)
++
++    def remote_prefill(self, request: RemotePrefillGenerateRequest):
++        request = msgspec.json.decode(
++            request.content.encode(encoding="utf-8"),
++            type=RemotePrefillRequest,
++        )
++
++        self._request_queue.put_nowait(request)
++
++    def get_remote_prefill_request_callback(self):
++        # TODO: integrate prefill_queue to dynamo endpoint
++        async def callback(request: RemotePrefillRequest):
++            endpoint = self.remote_prefill_endpoints[self.counter % len(self.remote_prefill_endpoints)]
++            self.counter = (self.counter + 1) % (2** 31 - 1)
++            remote_prefill_url = f"{endpoint}/remote_prefill"
++            logger.debug(f"Remote prefill endpoint: {remote_prefill_url}")
++            request = RemotePrefillGenerateRequest(
++                content=str(msgspec.json.encode(request), encoding="utf-8"),
++            )
++            async with aiohttp.ClientSession() as session:
++                await session.post(remote_prefill_url, json=request.model_dump())
++
++        return callback
++
++    def get_remote_prefill_params(self, request: Request):
++        if len(self.remote_prefill_endpoints) == 0:
++            return None
++
++        remote_prefill_params = RemotePrefillParams(
++                is_remote_prefill=True,
++                remote_prefill_request_callback=self.get_remote_prefill_request_callback(),
++        )
++        return remote_prefill_params
++
++    def _update_remote_prefill_endpoints(self):
++        """Calculate remote prefill endpoints"""
++        if not self.remote_prefill_endpoint_map:
++            self.remote_prefill_endpoints = []
++
++        self.remote_prefill_endpoints = [ep for ep in self.remote_prefill_endpoint_map.keys() \
++                                         if self.remote_prefill_endpoint_map[ep] == 1]
++        #TODO: let's clean up the map with the value = 0
++        # and we should remote the nixl connections
++        logger.info(f"Remote prefill endpoints: {self.remote_prefill_endpoints}")
++        return self.remote_prefill_endpoints
++
++    async def add_remote_prefill_ep(self, ep: str):
++        add_remote_nixl_metadata_url = f"{ep}/remote_nixl_metadata"
++        metadata = NixlMetadataRequest(
++            metadata=self.nixl_metadata().metadata,
++        )
++        async with aiohttp.ClientSession() as session:
++            async with session.post(add_remote_nixl_metadata_url, json=metadata.model_dump()) as resp:
++                if resp.status != 200:
++                    raise ValueError(f"add local nixl metadata to remote failed with status: {resp.status}")
++
++    async def add_remote_prefill_eps(self, request: RemotePrefillEpRequest):
++        if not request.endpoints or len(request.endpoints) == 0:
++            raise ValueError("Empty URL")
++        endpoints = [parsed for parsed in map(urlparse, request.endpoints) \
++                     if all([parsed.scheme, parsed.netloc]) and parsed.scheme in ["http", "https"]]
++        endpoints = [f"{x.scheme}://{x.netloc}" for x in endpoints]
++        if len(endpoints) == 0:
++            raise ValueError(f"No valid endpoints: {request.endpoints}")
++        for ep in endpoints:
++            try:
++                await self.add_remote_prefill_ep(ep)
++                self.remote_prefill_endpoint_map[ep] = 1
++            except ValueError as e:
++                logger.error(f"Failed to add remote prefill endpoint {ep}: {e}")
++                continue
++        self._update_remote_prefill_endpoints()
++
++    async def remove_remote_prefill_eps(self, request: RemotePrefillEpRequest):
++        if not request.endpoints or len(request.endpoints) == 0:
++            logger.error("No remote prefill endpoint to be removed")
++            return
++        for ep in request.endpoints:
++            if ep in self.remote_prefill_endpoint_map:
++                self.remote_prefill_endpoint_map[ep] = 0
++        self._update_remote_prefill_endpoints()
 diff --git a/vllm/envs.py b/vllm/envs.py
-index f80bf878f..f64c49fe8 100644
+index f80bf87..f64c49f 100644
 --- a/vllm/envs.py
 +++ b/vllm/envs.py
 @@ -1,4 +1,17 @@
@@ -4010,7 +4335,7 @@ index f80bf878f..f64c49fe8 100644
  
  # end-env-vars-definition
 diff --git a/vllm/model_executor/models/deepseek_v2.py b/vllm/model_executor/models/deepseek_v2.py
-index 23b450aed..23fe6d7b8 100644
+index 23b450a..23fe6d7 100644
 --- a/vllm/model_executor/models/deepseek_v2.py
 +++ b/vllm/model_executor/models/deepseek_v2.py
 @@ -1,4 +1,17 @@
@@ -4032,7 +4357,7 @@ index 23b450aed..23fe6d7b8 100644
  # Adapted from
  # https://github.com/huggingface/transformers/blob/v4.28.0/src/transformers/models/llama/modeling_llama.py
 diff --git a/vllm/outputs.py b/vllm/outputs.py
-index 014e8d5d8..3ffc0f354 100644
+index 014e8d5..3ffc0f3 100644
 --- a/vllm/outputs.py
 +++ b/vllm/outputs.py
 @@ -1,4 +1,17 @@
@@ -4073,7 +4398,7 @@ index 014e8d5d8..3ffc0f354 100644
  class CompletionOutput:
      """The output data of one completion output of a request.
 diff --git a/vllm/platforms/__init__.py b/vllm/platforms/__init__.py
-index 0ed221043..08dbc0e78 100644
+index 0ed2210..08dbc0e 100644
 --- a/vllm/platforms/__init__.py
 +++ b/vllm/platforms/__init__.py
 @@ -20,7 +20,8 @@ def vllm_version_matches_substr(substr: str) -> bool:
@@ -4088,10 +4413,10 @@ index 0ed221043..08dbc0e78 100644
              "The vLLM package was not found, so its version could not be "
 diff --git a/vllm/remote_prefill.py b/vllm/remote_prefill.py
 new file mode 100644
-index 000000000..83f6cd575
+index 0000000..56dd7f3
 --- /dev/null
 +++ b/vllm/remote_prefill.py
-@@ -0,0 +1,82 @@
+@@ -0,0 +1,94 @@
 +# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 +# SPDX-License-Identifier: Apache-2.0
 +#
@@ -4107,8 +4432,8 @@ index 000000000..83f6cd575
 +# See the License for the specific language governing permissions and
 +# limitations under the License.
 +
-+from dataclasses import dataclass
-+from typing import Callable, Optional, List
++from dataclasses import dataclass, field
++from typing import Callable, Optional, List, Dict
 +from enum import Enum
 +
 +import msgspec
@@ -4174,9 +4499,20 @@ index 000000000..83f6cd575
 +    decode_computed_block_ids: Optional[List[int]] = None
 +    decode_engine_id: Optional[str] = None
 +    remote_prefill_request_callback: Optional[RemotePrefillRequestCallback] = None
-\ No newline at end of file
++
++@dataclass
++class RemotePrefillResult:
++    """Remote prefill notifications and progress.
++    Args:
++        request_notif_counter: The recv kv cache notification consumed by decode worker.
++        request_done_counter: The send kv cache notification consumed by prefill worker.
++        is_pending_remote_prefill: Whether the current loop pending on kv cache transfer.
++    """
++    request_notif_counter: Dict[str, int] = field(default_factory=dict)
++    request_done_counter: Dict[str, int] = field(default_factory=dict)
++    is_pending_remote_prefill: bool = False
 diff --git a/vllm/sampling_params.py b/vllm/sampling_params.py
-index 68ed99664..5b0b7e6dc 100644
+index 68ed996..5b0b7e6 100644
 --- a/vllm/sampling_params.py
 +++ b/vllm/sampling_params.py
 @@ -1,4 +1,18 @@
@@ -4208,7 +4544,7 @@ index 68ed99664..5b0b7e6dc 100644
  class SamplingParams(
          msgspec.Struct,
 diff --git a/vllm/sequence.py b/vllm/sequence.py
-index 61867b025..8a07cf39e 100644
+index 61867b0..8a07cf3 100644
 --- a/vllm/sequence.py
 +++ b/vllm/sequence.py
 @@ -1,4 +1,18 @@
@@ -4332,8 +4668,219 @@ index 61867b025..8a07cf39e 100644
  
      @property
      def is_first_multi_step(self) -> bool:
+diff --git a/vllm/spec_decode/batch_expansion.py b/vllm/spec_decode/batch_expansion.py
+index e08ed74..13b941f 100644
+--- a/vllm/spec_decode/batch_expansion.py
++++ b/vllm/spec_decode/batch_expansion.py
+@@ -14,6 +14,7 @@ from vllm.sequence import (VLLM_INVALID_TOKEN_ID, VLLM_TOKEN_ID_ARRAY_TYPE,
+ from vllm.spec_decode.interfaces import (SpeculativeProposals,
+                                          SpeculativeScorer, SpeculativeScores)
+ from vllm.spec_decode.util import nvtx_range, split_batch_by_proposal_len
++from vllm.remote_prefill import RemotePrefillResult
+ 
+ SeqId = int
+ TargetSeqId = int
+@@ -77,9 +78,14 @@ class BatchExpansionTop1Scorer(SpeculativeScorer):
+              proposal_lens_list=proposal_lens_list,
+          )
+ 
++        remote_prefill_result = RemotePrefillResult()
++
+         target_sampler_output = self._scorer_worker.execute_model(
+             execute_model_req=execute_model_req.clone(
+                 seq_group_metadata_list=target_seq_group_metadata_list))
++        if isinstance(target_sampler_output, tuple) \
++            and len(target_sampler_output) == 2:
++            target_sampler_output, remote_prefill_result = target_sampler_output
+         assert len(target_sampler_output) == 1, "expected single-step output"
+         target_sampler_output = target_sampler_output[0]
+ 
+@@ -88,7 +94,7 @@ class BatchExpansionTop1Scorer(SpeculativeScorer):
+             return self._contract_batch_all_spec(
+                 target_sampler_output=target_sampler_output,
+                 proposals=proposals,
+-            )
++            ), remote_prefill_result
+         else:
+             # Batch has a mix of spec decode enabled and disabled seq groups
+             return self._contract_batch(
+@@ -99,7 +105,7 @@ class BatchExpansionTop1Scorer(SpeculativeScorer):
+                 non_spec_indices=non_spec_indices,
+                 spec_indices=spec_indices,
+                 k=execute_model_req.num_lookahead_slots,
+-            )
++            ), remote_prefill_result
+ 
+     def _expand_batch(
+         self,
+diff --git a/vllm/spec_decode/mqa_scorer.py b/vllm/spec_decode/mqa_scorer.py
+index 6275c46..02b8c81 100644
+--- a/vllm/spec_decode/mqa_scorer.py
++++ b/vllm/spec_decode/mqa_scorer.py
+@@ -4,6 +4,7 @@ from vllm.sequence import (ExecuteModelRequest, SequenceData,
+                            SequenceGroupMetadata, get_all_seq_ids)
+ from vllm.spec_decode.interfaces import (SpeculativeProposals,
+                                          SpeculativeScorer, SpeculativeScores)
++from vllm.remote_prefill import RemotePrefillResult
+ 
+ SeqId = int
+ TargetSeqId = int
+@@ -63,10 +64,15 @@ class MQAScorer(SpeculativeScorer):
+             )
+             target_seq_group_metadata_list.append(new_seq_group_metadata)
+ 
++        remote_prefill_result = RemotePrefillResult()
++
+         target_sampler_output = self._scorer_worker.execute_model(
+             execute_model_req=execute_model_req.clone(
+                 seq_group_metadata_list=target_seq_group_metadata_list))
+ 
++        if isinstance(target_sampler_output, tuple) and len(target_sampler_output) == 2:
++            target_sampler_output, remote_prefill_result = target_sampler_output
++
+         target_sampler_output = target_sampler_output[0]
+ 
+         k = execute_model_req.num_lookahead_slots
+@@ -156,4 +162,4 @@ class MQAScorer(SpeculativeScorer):
+                                  token_ids=all_tokens,
+                                  logprobs=all_logprobs,
+                                  hidden_states=hidden_states,
+-                                 prompt_logprobs=prompt_logprobs)
++                                 prompt_logprobs=prompt_logprobs), remote_prefill_result
+diff --git a/vllm/spec_decode/multi_step_worker.py b/vllm/spec_decode/multi_step_worker.py
+index d8d5491..15c009a 100644
+--- a/vllm/spec_decode/multi_step_worker.py
++++ b/vllm/spec_decode/multi_step_worker.py
+@@ -90,6 +90,8 @@ class MultiStepWorker(ProposerWorkerBase, DelegateWorkerBase):
+                 indices_of_seq_with_bonus_tokens)
+             model_outputs = self.execute_model(
+                 execute_model_req=expanded_request)
++            if isinstance(model_outputs, tuple) and len(model_outputs) == 2:
++                model_outputs = model_outputs[0]
+         else:
+             # Here we run multi-step directly, with every step prepared
+             # on the CPU.
+@@ -99,8 +101,10 @@ class MultiStepWorker(ProposerWorkerBase, DelegateWorkerBase):
+             if expanded_request.previous_hidden_states is not None:
+                 self.worker.model_runner.return_hidden_states = True
+             for _ in range(sample_len):
+-                model_output: List[SamplerOutput] = self.worker.execute_model(
++                model_output = self.worker.execute_model(
+                     execute_model_req=expanded_request)
++                if isinstance(model_output, tuple) and len(model_output) == 2:
++                    model_output = model_output[0]
+                 assert (len(model_output) == 1
+                         ), "composing multistep workers not supported"
+                 model_output = model_output[0]
+diff --git a/vllm/spec_decode/spec_decode_worker.py b/vllm/spec_decode/spec_decode_worker.py
+index a724bea..13a6ee0 100644
+--- a/vllm/spec_decode/spec_decode_worker.py
++++ b/vllm/spec_decode/spec_decode_worker.py
+@@ -48,6 +48,7 @@ from vllm.spec_decode.util import (Timer, create_logprobs_output,
+                                    split_batch_by_proposal_len)
+ from vllm.utils import resolve_obj_by_qualname
+ from vllm.worker.worker_base import LoRANotSupportedWorkerBase, WorkerBase
++from vllm.remote_prefill import RemotePrefillResult
+ 
+ logger = init_logger(__name__)
+ 
+@@ -391,6 +392,22 @@ class SpecDecodeWorker(LoRANotSupportedWorkerBase):
+     def load_model(self, *args, **kwargs):
+         pass
+ 
++    def initialize_nixl(self, engine_id: str) -> List[bytes]:
++        return self.scorer_worker.initialize_nixl(engine_id)
++
++    def get_nixl_agent_metadata(self) -> bytes:
++        return self.scorer_worker.get_nixl_agent_metadata()
++
++    def add_remote_nixl_metadata(self, engine_id: str, agents_metadata: List[bytes], kv_caches_base_addr: List[List[Tuple[int
++, int]]], num_blocks: int) -> str:
++        return self.scorer_worker.add_remote_nixl_metadata(engine_id, agents_metadata, kv_caches_base_addr, num_blocks)
++
++    def get_nixl_kv_caches_base_addr(self) -> List[bytes]:
++        return self.scorer_worker.get_nixl_kv_caches_base_addr()
++
++    def shutdown_nixl(self) -> None:
++        return self.scorer_worker.shutdown_nixl()
++
+     def _configure_model_sampler_for_spec_decode(self):
+         """Configure model sampler to emit GPU tensors. This allows spec decode
+         to keep data on device without transferring to CPU and serializing,
+@@ -669,8 +686,13 @@ class SpecDecodeWorker(LoRANotSupportedWorkerBase):
+         not called, meaning that the kv-cache in proposer for requests is not
+         updated, so they cannot enable spec decode in the rest decoding.
+         """
+-
++        remote_prefill_result = RemotePrefillResult()
+         sampler_output = self.scorer_worker.execute_model(execute_model_req)
++        if isinstance(sampler_output, tuple) and len(sampler_output) == 2:
++            sampler_output, remote_prefill_result = sampler_output
++            if remote_prefill_result.is_pending_remote_prefill:
++                return sampler_output, remote_prefill_result
++
+         assert len(sampler_output) == 1
+         sampler_output = sampler_output[0]
+ 
+@@ -700,9 +722,11 @@ class SpecDecodeWorker(LoRANotSupportedWorkerBase):
+             # We prepare the prefill hidden states here so that there no
+             # additional complexity in worker for spec_decode vs non_spec_decode
+             # flow and execute_model doesn't need additional modifications.
++            previous_hidden_states = hidden_states \
++                if sampler_output.prefill_hidden_states is None \
++                    else sampler_output.prefill_hidden_states
+             execute_model_req.previous_hidden_states = \
+-                prepare_prefill_hidden_states(
+-                    sampler_output.prefill_hidden_states)
++                prepare_prefill_hidden_states(previous_hidden_states)
+             for i in range(self._num_spec_prefill_steps):
+                 execute_model_req.spec_step_idx = i
+                 self.proposer_worker.execute_model(execute_model_req)
+@@ -717,7 +741,7 @@ class SpecDecodeWorker(LoRANotSupportedWorkerBase):
+         sampler_output.sampled_token_probs = None
+         sampler_output.sampled_token_ids = None
+         sampler_output.logprobs = None
+-        return sampler_output_to_return
++        return sampler_output_to_return, remote_prefill_result
+ 
+     def _run_non_driver_rank(self) -> bool:
+         """Run proposer and verifier model in non-driver workers. This is used
+@@ -736,7 +760,11 @@ class SpecDecodeWorker(LoRANotSupportedWorkerBase):
+         # In case of prefill, scorer_worker has to be run before proposer so
+         # that the hidden states can be propagated to proposer when needed.
+         if data["no_spec"]:
+-            self.scorer_worker.execute_model()
++            sampler_output = self.scorer_worker.execute_model()
++            if isinstance(sampler_output, tuple) and len(sampler_output) == 2:
++                sampler_output, remote_prefill_result = sampler_output
++                if remote_prefill_result.is_pending_remote_prefill:
++                    return True
+ 
+         if not data["disable_all_speculation"]:
+             # Even if num_lookahead_slots is zero, we want to run the
+@@ -789,9 +817,10 @@ class SpecDecodeWorker(LoRANotSupportedWorkerBase):
+                                "workers generate no tokens")
+ 
+         execute_model_req.previous_hidden_states = None
++        remote_prefill_result = RemotePrefillResult()
+ 
+         with Timer() as scoring_timer:
+-            proposal_scores = self.scorer.score_proposals(
++            proposal_scores, remote_prefill_result = self.scorer.score_proposals(
+                 execute_model_req,
+                 proposals,
+             )
+@@ -831,7 +860,7 @@ class SpecDecodeWorker(LoRANotSupportedWorkerBase):
+             prompt_logprobs=proposal_scores.prompt_logprobs
+             if not self._disable_logprobs else None,
+             k=execute_model_req.num_lookahead_slots,
+-            stage_times=stage_times)
++            stage_times=stage_times), remote_prefill_result
+ 
+     @nvtx_range("spec_decode_worker._verify_tokens")
+     def _verify_tokens(
 diff --git a/vllm/worker/model_runner.py b/vllm/worker/model_runner.py
-index 9524a69f6..c314fbe8f 100644
+index 9524a69..1716276 100644
 --- a/vllm/worker/model_runner.py
 +++ b/vllm/worker/model_runner.py
 @@ -1,4 +1,17 @@
@@ -4354,7 +4901,52 @@ index 9524a69f6..c314fbe8f 100644
  
  import dataclasses
  import gc
-@@ -1875,6 +1888,9 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
+@@ -1631,6 +1644,8 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
+         ModelInputForGPUWithSamplingMetadata)
+     _builder_cls: Type[ModelInputForGPUBuilder] = ModelInputForGPUBuilder
+ 
++    _fake_sample_output: Optional[SamplerOutput] = None
++
+     def make_model_input_from_broadcasted_tensor_dict(
+         self,
+         tensor_dict: Dict[str, Any],
+@@ -1822,11 +1837,16 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
+         if model_input.async_callback is not None:
+             model_input.async_callback()
+ 
+-        # Sample the next token.
+-        output: SamplerOutput = self.model.sample(
+-            logits=logits,
+-            sampling_metadata=model_input.sampling_metadata,
+-        )
++        # in the producer side of pd disagg scenario, the next tokens are
++        # not needed. So we skip it
++        if self.need_skip_sampling() and self._fake_sample_output is not None:
++            output = self._fake_sample_output
++        else:
++            # Sample the next token.
++            output: SamplerOutput = self.model.sample(
++                logits=logits,
++                sampling_metadata=model_input.sampling_metadata,
++            )
+         if (self.observability_config is not None
+                 and self.observability_config.collect_model_forward_time
+                 and output is not None):
+@@ -1859,6 +1879,13 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
+ 
+             output.hidden_states = hidden_states
+ 
++        # save a fake output
++        if (self._fake_sample_output is None
++                and output is not None
++                and self.need_skip_sampling()):
++
++            self._fake_sample_output = output
++
+         return [output]
+ 
+     def need_recv_kv(self, model_input, kv_caches) -> bool:
+@@ -1875,6 +1902,9 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
  
          if self.vllm_config.kv_transfer_config is None:
              return False
@@ -4364,7 +4956,24 @@ index 9524a69f6..c314fbe8f 100644
  
          prefill_meta = model_input.attn_metadata.prefill_metadata
  
-@@ -1900,6 +1916,9 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
+@@ -1886,6 +1916,16 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
+         return self.vllm_config.kv_transfer_config.is_kv_consumer and (
+             not is_profile_run) and is_prefill_run
+ 
++    def need_skip_sampling(self) -> bool:
++        """
++        check whether skip the step of sampling.
++        """
++
++        if self.vllm_config.kv_transfer_config is None:
++            return False
++
++        return self.vllm_config.kv_transfer_config.get_from_extra_config("skip_sampling", False)
++
+     def need_send_kv(self, model_input, kv_caches) -> bool:
+         """Check if we need to send kv-cache to the other worker.
+         We need to send KV when
+@@ -1900,6 +1940,9 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
  
          if self.vllm_config.kv_transfer_config is None:
              return False
@@ -4375,7 +4984,7 @@ index 9524a69f6..c314fbe8f 100644
          prefill_meta = model_input.attn_metadata.prefill_metadata
  
 diff --git a/vllm/worker/worker.py b/vllm/worker/worker.py
-index d59f20f49..4c78301a9 100644
+index d59f20f..e4288d2 100644
 --- a/vllm/worker/worker.py
 +++ b/vllm/worker/worker.py
 @@ -1,8 +1,22 @@
@@ -4445,8 +5054,8 @@ index d59f20f49..4c78301a9 100644
 +                self.nixl_connector.read_blocks(worker_input.local_block_ids[i], worker_input.staging_block_ids[i], worker_input.remote_block_ids[i], worker_input.remote_engine_id[i])
 +
 +    def _write_blocks(self, worker_input: WorkerInput) -> None:
-+        if not self.is_driver_worker:
-+            torch.cuda.synchronize() # to make sure that the blocks are ready, on driver worker we transfer after sampling, so there's no need to synchronize
++        # if not self.is_driver_worker: # we skipped sampling on driver worker
++        torch.cuda.synchronize() # to make sure that the blocks are ready, on driver worker we transfer after sampling, so there's no need to synchronize
 +
 +        for i, op_type in enumerate(worker_input.op_type):
 +            if op_type == MemoryOpType.WRITE:
@@ -4482,7 +5091,7 @@ index d59f20f49..4c78301a9 100644
  
      @torch.inference_mode()
 diff --git a/vllm/worker/worker_base.py b/vllm/worker/worker_base.py
-index e5662e693..ffcf1193a 100644
+index e5662e6..e52db9f 100644
 --- a/vllm/worker/worker_base.py
 +++ b/vllm/worker/worker_base.py
 @@ -1,4 +1,18 @@
@@ -4517,7 +5126,7 @@ index e5662e693..ffcf1193a 100644
                                             ModelRunnerBase,
                                             ModelRunnerInputBase)
 +from vllm.distributed.device_communicators.nixl import DynamoNixlConnector
-+from vllm.remote_prefill import MemoryOpType
++from vllm.remote_prefill import MemoryOpType, RemotePrefillResult
 +
  
  logger = init_logger(__name__)
@@ -4594,16 +5203,18 @@ index e5662e693..ffcf1193a 100644
  
      def _get_driver_input_and_broadcast(
          self, execute_model_req: ExecuteModelRequest
-@@ -403,49 +446,88 @@ class LocalOrDistributedWorkerBase(WorkerBase):
+@@ -401,51 +444,91 @@ class LocalOrDistributedWorkerBase(WorkerBase):
+             kwargs["spec_step_idx"] = execute_model_req.spec_step_idx
+ 
          self.execute_worker(worker_input)
++        remote_prefill_result = RemotePrefillResult()
  
          # If there is no input, we don't need to execute the model.
 -        if worker_input.num_seq_groups == 0:
 -            return []
 +        if worker_input.num_seq_groups > 0:
-+
 +            self._read_blocks(worker_input)
-+
++            remote_prefill_result.is_pending_remote_prefill = False
 +            intermediate_tensors = None
 +            orig_model_execute_time = 0.0
 +            if not get_pp_group().is_first_rank:
@@ -4645,7 +5256,12 @@ index e5662e693..ffcf1193a 100644
 -                    and self.observability_config.collect_model_execute_time):
 -                orig_model_execute_time = intermediate_tensors.tensors.get(
 -                    "model_execute_time", torch.tensor(0)).item()
--
++                    and self.observability_config.collect_model_execute_time
++                    and output is not None):
++                for o in output:
++                    o.model_execute_time = (orig_model_execute_time +
++                                            model_execute_time)
+ 
 -        output = self.model_runner.execute_model(
 -            model_input=model_input,
 -            kv_caches=self.kv_cache[worker_input.virtual_engine]
@@ -4654,12 +5270,7 @@ index e5662e693..ffcf1193a 100644
 -            num_steps=num_steps,
 -            **kwargs,
 -        )
-+                    and self.observability_config.collect_model_execute_time
-+                    and output is not None):
-+                for o in output:
-+                    o.model_execute_time = (orig_model_execute_time +
-+                                            model_execute_time)
- 
+-
 -        model_execute_time = time.perf_counter() - start_time
 -        if not get_pp_group().is_last_rank:
 -            # output is IntermediateTensors
@@ -4680,6 +5291,7 @@ index e5662e693..ffcf1193a 100644
 +            self._write_blocks(worker_input)
  
 +        else:
++            remote_prefill_result.is_pending_remote_prefill = True
 +            output = []
 +
 +        # collect kv transfer notifications from non driver workers
@@ -4706,12 +5318,12 @@ index e5662e693..ffcf1193a 100644
 +            request_done_counter = defaultdict(int)
 +            for req_id in self.nixl_connector.get_done_tranfers():
 +                request_done_counter[req_id] += 1
-+        else:
-+            request_notif_counter = {}
-+            request_done_counter = {}
++        
++        remote_prefill_result.request_notif_counter = request_notif_counter
++        remote_prefill_result.request_done_counter = request_done_counter
          # output is List[SamplerOutput]
 -        return output
-+        return output, request_notif_counter, request_done_counter
++        return output, remote_prefill_result
 +
 +    def _read_blocks(self, worker_input: WorkerInput) -> None:
 +        pass
