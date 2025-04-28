@@ -16,8 +16,9 @@
 import asyncio
 import logging
 import uuid
+import time
 from enum import Enum
-from typing import Any, AsyncIterator, Dict, List, Tuple, Union
+from typing import Any, AsyncIterator, Dict, List, Tuple, Union, Mapping, Optional
 
 from components.kv_router import Router
 from components.worker import VllmWorker
@@ -34,6 +35,10 @@ from vllm.transformers_utils.tokenizer import AnyTokenizer
 from dynamo.llm import KvMetricsAggregator
 from dynamo.runtime import EtcdKvCache
 from dynamo.sdk import async_on_start, depends, dynamo_context, endpoint, service
+from utils.observability import (SpanAttributes, SpanKind, LLMRequestTypeValues, Status, StatusCode,
+                                 TraceContextTextMapPropagator, init_tracer, is_otel_available, accumulate_stream_items,
+                                 set_completions, should_send_prompts, set_response_attributes, set_request_attributes, set_prompts,
+                                 init_metrics, Meters, metric_shared_attributes, set_choice_counter_metrics, set_token_counter_metrics)
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +80,11 @@ class Processor(ProcessMixIn):
             self.engine_args.router_num_threads
         )  # Number of worker tasks to process the queue
         self.worker_tasks: List[asyncio.Task] = []
+        self.tracer = None
+        self.meter = None
+        if is_otel_available():
+            self.tracer = init_tracer("dynamo.processor")
+            self.meter = init_metrics("dynamo.processor")
         print(f"Processor init: {self.engine_args.router}")
 
     def _create_tokenizer(self, engine_args: AsyncEngineArgs) -> AnyTokenizer:
@@ -190,6 +200,7 @@ class Processor(ProcessMixIn):
         self,
         raw_request: Union[CompletionRequest, ChatCompletionRequest],
         request_type: RequestType,
+        trace_headers: Optional[Mapping[str, str]] = None,
     ):
         request_id = str(uuid.uuid4())
         logger.debug(f"Got raw request: {raw_request}")
@@ -204,6 +215,7 @@ class Processor(ProcessMixIn):
                 "request_id": request_id,
                 "raw_request": raw_request,
                 "request_type": request_type,
+                "trace_headers": trace_headers,
             }
         )
 
@@ -222,6 +234,7 @@ class Processor(ProcessMixIn):
         request_id = request_data["request_id"]
         raw_request = request_data["raw_request"]
         request_type = request_data["request_type"]
+        trace_headers = request_data["trace_headers"]
 
         try:
             # Parse the raw request here instead of in _generate
@@ -257,6 +270,7 @@ class Processor(ProcessMixIn):
                     sampling_params=sampling_params,
                     request_id=request_id,
                     prefix_hit_rate=prefix_hit_rate,
+                    trace_headers=trace_headers,
                 ).model_dump_json()
 
                 if self.use_router:
@@ -329,8 +343,92 @@ class Processor(ProcessMixIn):
 
     @endpoint(name="chat/completions")
     async def chat_completions(self, raw_request: ChatCompletionRequest):
-        async for response in self._generate(raw_request, RequestType.CHAT):
-            yield response
+        if is_otel_available():
+            with self.tracer.start_as_current_span("dynamo.chat.completions",
+                                                   kind=SpanKind.SERVER,
+                                                   attributes={
+                                                       SpanAttributes.GEN_AI_REQUEST_TYPE: LLMRequestTypeValues.CHAT.value},
+                                                   ) as span:
+                start_time = time.time()
+                first_token = True
+                trace_headers = {}
+                TraceContextTextMapPropagator().inject(trace_headers)
+
+                set_request_attributes(span, raw_request)
+                if should_send_prompts():
+                    set_prompts(span, raw_request.messages)
+
+                complete_response = {"choices": [], "model": "", "usage": None, "error": None}
+                shared_attributes = metric_shared_attributes(
+                    response_model=complete_response.get("model") or None,
+                    operation="chat",
+                    is_streaming=raw_request.stream,
+                )
+
+                async for response in self._generate(raw_request, RequestType.CHAT, trace_headers):
+                    if first_token:
+                        time_of_first_token = time.time()
+                        shared_attributes[SpanAttributes.GEN_AI_RESPONSE_MODEL] = complete_response.get("model")
+                        span.set_attribute(SpanAttributes.GEN_AI_STREAMING_TIME_TO_FIRST_TOKEN,
+                                           time_of_first_token - start_time)
+                        if Meters.is_metrics_inited:
+                            Meters.streaming_time_to_first_token.record((time_of_first_token - start_time),
+                                                                        attributes=shared_attributes)
+                        first_token = False
+                    yield response
+                    accumulate_stream_items(response, complete_response)
+
+                span.set_attribute(SpanAttributes.GEN_AI_RESPONSE_MODEL, complete_response.get("model"))
+                shared_attributes[SpanAttributes.GEN_AI_RESPONSE_MODEL] = complete_response.get("model")
+                if Meters.is_metrics_inited:
+                    Meters.chat_counter.add(1, attributes=shared_attributes)
+                if complete_response.get("choices"):
+                    set_choice_counter_metrics(complete_response.get("choices"), shared_attributes)
+
+                # token metrics
+                usage = complete_response.get("usage")
+                if usage and not isinstance(usage, dict):
+                    usage = usage.__dict__
+                if usage:
+                    set_token_counter_metrics(usage, shared_attributes)
+
+                # duration metrics
+                if start_time and isinstance(start_time, (float, int)):
+                    duration = time.time() - start_time
+                else:
+                    duration = None
+                if duration and isinstance(duration, (float, int)) and Meters.is_metrics_inited:
+                    Meters.chat_duration_histogram.record(duration, attributes=shared_attributes)
+                if Meters.is_metrics_inited:
+                    Meters.streaming_time_to_generate.record(time.time() - time_of_first_token,
+                                                             attributes=shared_attributes)
+
+                if usage and usage.get("completion_tokens"):  # and streaming_time_per_output_token:
+                    completion_tokens = usage.get("completion_tokens")
+                    if Meters.is_metrics_inited:
+                        Meters.streaming_time_per_output_token.record(
+                            (time.time() - time_of_first_token) / completion_tokens,
+                            attributes=shared_attributes)
+                    span.set_attribute(SpanAttributes.GEN_AI_STREAMING_TIME_PER_OUTPUT_TOKEN,
+                                       (time.time() - time_of_first_token) / completion_tokens)
+
+                set_response_attributes(span, complete_response)
+
+                if should_send_prompts():
+                    set_completions(span, complete_response.get("choices"))
+
+                if complete_response.get("error"):
+                    span.set_status(Status(StatusCode.ERROR))
+                    if complete_response.get("error").get("type"):
+                        span.set_attribute("error.type", complete_response.get("error").get("type"))
+                    if complete_response.get("error").get("message"):
+                        span.set_status(Status(status_code=StatusCode.ERROR,
+                                               description=f"{complete_response.get("error").get("message")}"))
+                else:
+                    span.set_status(Status(StatusCode.OK))
+        else:
+            async for response in self._generate(raw_request, RequestType.CHAT):
+                yield response
 
     # @endpoint()
     # async def completions(self, raw_request: CompletionRequest):
