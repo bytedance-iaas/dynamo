@@ -15,7 +15,7 @@
 
 
 import json
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Mapping
 
 import msgspec
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -76,6 +76,7 @@ class vLLMGenerateRequest(BaseModel):
     sampling_params: SamplingParams
     request_id: str
     prefix_hit_rate: Optional[float] = 0.0
+    trace_headers: Optional[Mapping[str, str]] = None
 
     @field_validator("sampling_params", mode="before")
     @classmethod
