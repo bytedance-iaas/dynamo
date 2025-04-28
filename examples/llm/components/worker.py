@@ -218,6 +218,7 @@ class VllmWorker:
             sampling_params=request.sampling_params,
             request_id=request.request_id,
             remote_prefill_params=remote_prefill_params,
+            trace_headers=request.trace_headers,
         ):
             yield MyRequestOutput(
                 request_id=response.request_id,
