@@ -84,7 +84,6 @@ RUN wget --tries=3 --waitretry=5 https://github.com/etcd-io/etcd/releases/downlo
     rm /tmp/etcd.tar.gz
 ENV PATH=/usr/local/bin/etcd/:$PATH
 
-
 ### VIRTUAL ENVIRONMENT SETUP ###
 
 # Install uv and create virtualenv
@@ -104,19 +103,24 @@ ENV NO_PROXY=localhost,127.0.0.1
 # Install NIXL Python module
 # TODO: Move gds_path selection based on arch into NIXL build
 RUN if [ "$ARCH" = "arm64" ]; then \
-        cd /opt/nixl && uv pip install . --config-settings=setup-args="-Dgds_path=/usr/local/cuda/targets/sbsa-linux/"; \
+        cd /opt/nixl && uv pip install . --config-settings=setup-args="-Dgds_path=/usr/local/cuda/targets/sbsa-linux/" ; \
     else \
         cd /opt/nixl && uv pip install . ; \
     fi
 
+ENV HTTP_PROXY=
+ENV HTTPS_PROXY=
+ENV NO_PROXY=
 # Install patched vllm - keep this early in Dockerfile to avoid
 # rebuilds from unrelated source code changes
-ARG VLLM_REF="0.8.5"
+ARG VLLM_REF="0.8.5+byted.202505130109"
 ARG VLLM_REPO=https://github.com/bytedance-iaas/vllm.git
 ARG VLLM_BRANCH=release_vllm_nixl
+ARG VLLM_WHEEL_REPO="https://iaas-pypi.tos-cn-beijing.ivolces.com/packages/vllm_byted"
+ARG VLLM_WHEEL_NAME="vllm-${VLLM_REF}-cp38-abi3-linux_x86_64.whl"
 # ARG VLLM_PATCH="vllm_v${VLLM_REF}-dynamo-kv-disagg-patch.patch"
-# ARG VLLM_PATCHED_PACKAGE_NAME="ai_dynamo_vllm"
-# ARG VLLM_PATCHED_PACKAGE_VERSION="0.8.4"
+ARG VLLM_PATCHED_PACKAGE_NAME="ai_dynamo_vllm"
+ARG VLLM_PATCHED_PACKAGE_VERSION="0.8.5"
 ARG VLLM_MAX_JOBS=4
 RUN --mount=type=bind,source=./container/deps/,target=/tmp/deps \
     --mount=type=cache,target=/root/.cache/uv \
@@ -127,23 +131,22 @@ RUN --mount=type=bind,source=./container/deps/,target=/tmp/deps \
     # NOTE: vLLM build from source on ARM can take several hours, see VLLM_MAX_JOBS details.
     # PyTorch 2.7 supports CUDA 12.8 and aarch64 installs
     uv pip install torch==2.7.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128 && \
-    # Download vLLM source with version matching patch
-    git clone --branch ${VLLM_BRANCH} --depth 1 ${VLLM_REPO} /tmp/vllm/vllm-${VLLM_REF} && \
-    cd /tmp/vllm/vllm-${VLLM_REF}/ && \
-    # Patch vLLM source with dynamo additions
-    # patch -p1 < /tmp/deps/vllm/${VLLM_PATCH} && \
-    # WAR: Set package version check to 'vllm' instead of 'ai_dynamo_vllm' to avoid
-    # platform detection issues on ARM install.
-    # TODO: Rename package from vllm to ai_dynamo_vllm like x86 path below to remove this WAR.
-    sed -i 's/version("ai_dynamo_vllm")/version("vllm")/g' vllm/platforms/__init__.py && \
-    # Remove pytorch from vllm install dependencies
-    python use_existing_torch.py && \
-    # Build/install vllm from source
-    uv pip install -r requirements/build.txt && \
-    # MAX_JOBS set to avoid running OOM on vllm-flash-attn build, this can
-    # significantly impact the overall build time. Each job can take up
-    # to -16GB RAM each, so tune according to available system memory.
-    MAX_JOBS=${VLLM_MAX_JOBS} uv pip install . --no-build-isolation
+    python -m pip download --only-binary=:all: --no-deps --dest /tmp/vllm ${VLLM_WHEEL_REPO}/${VLLM_WHEEL_NAME} && \
+    # Patch vLLM pre-built download with dynamo additions
+    cd /tmp/vllm && \
+    wheel unpack *.whl && \
+    cd vllm-${VLLM_REF}/ && \
+    # Rename the package from vllm to ai_dynamo_vllm
+    mv vllm-${VLLM_REF}.dist-info ${VLLM_PATCHED_PACKAGE_NAME}-${VLLM_PATCHED_PACKAGE_VERSION}.dist-info && \
+    sed -i "s/^Name: vllm/Name: ${VLLM_PATCHED_PACKAGE_NAME}/g" ${VLLM_PATCHED_PACKAGE_NAME}-${VLLM_PATCHED_PACKAGE_VERSION}.dist-info/METADATA && \
+    sed -i "s/^Version: ${VLLM_REF}/Version: ${VLLM_PATCHED_PACKAGE_VERSION}/g" ${VLLM_PATCHED_PACKAGE_NAME}-${VLLM_PATCHED_PACKAGE_VERSION}.dist-info/METADATA && \
+    # Update wheel tag from linux_${ARCH_ALT} to manylinux1_${ARCH_ALT} in WHEEL file
+    sed -i "s/Tag: cp38-abi3-linux_${ARCH_ALT}/Tag: cp38-abi3-manylinux1_${ARCH_ALT}/g" ${VLLM_PATCHED_PACKAGE_NAME}-${VLLM_PATCHED_PACKAGE_VERSION}.dist-info/WHEEL && \
+    # Also update the tag in RECORD file to match
+    sed -i "s/-cp38-abi3-linux_${ARCH_ALT}.whl/-cp38-abi3-manylinux1_${ARCH_ALT}.whl/g" ${VLLM_PATCHED_PACKAGE_NAME}-${VLLM_PATCHED_PACKAGE_VERSION}.dist-info/RECORD && \
+    mkdir -p /workspace/dist && \
+    wheel pack . --dest-dir /workspace/dist && \
+    uv pip install /workspace/dist/${VLLM_PATCHED_PACKAGE_NAME}-*.whl ;
 
 # Common dependencies
 RUN --mount=type=bind,source=./container/deps/requirements.txt,target=/tmp/requirements.txt \
@@ -292,6 +295,11 @@ COPY components /workspace/components
 COPY launch /workspace/launch
 COPY deploy/dynamo/sdk /workspace/deploy/dynamo/sdk
 
+ARG HTTP_PROXY
+ENV HTTP_PROXY=$HTTP_PROXY
+ENV HTTPS_PROXY=$HTTP_PROXY
+ENV NO_PROXY=localhost,127.0.0.1
+
 # Build Rust crate binaries packaged with the wheel
 RUN cargo build --release --locked --features mistralrs,sglang,vllm,python \
     -p dynamo-run \
@@ -407,7 +415,7 @@ CMD []
 ########## Runtime Image ###########
 ####################################
 
-FROM ${RUNTIME_IMAGE}:${RUNTIME_IMAGE_TAG} AS runtime
+FROM ${BASE_IMAGE}:${BASE_IMAGE_TAG} AS runtime
 
 WORKDIR /workspace
 ENV DYNAMO_HOME=/workspace
@@ -417,10 +425,25 @@ ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 # Setup the python environment
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3-dev && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        meson \
+        ninja-build \
+        pybind11-dev && \
     rm -rf /var/lib/apt/lists/* && \
     uv venv $VIRTUAL_ENV --python 3.12 && \
     echo "source $VIRTUAL_ENV/bin/activate" >> ~/.bashrc
+
+COPY --from=nixl_base /opt/nixl /opt/nixl
+COPY --from=nixl_base /opt/nixl/commit.txt /opt/nixl/commit.txt
+
+
+RUN if [ "$ARCH" = "arm64" ]; then \
+        cd /opt/nixl && uv pip install . --config-settings=setup-args="-Dgds_path=/usr/local/cuda/targets/sbsa-linux/" ; \
+    else \
+        cd /opt/nixl && uv pip install . ; \
+    fi
 
 # Install the wheels and symlink executables to /usr/local/bin so dynamo components can use them
 # Dynamo components currently do not have the VIRTUAL_ENV in their PATH, so we need to symlink the executables
