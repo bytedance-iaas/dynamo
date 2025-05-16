@@ -98,7 +98,12 @@ ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 ARG HTTP_PROXY
 ENV HTTP_PROXY=$HTTP_PROXY
 ENV HTTPS_PROXY=$HTTP_PROXY
-ENV NO_PROXY=localhost,127.0.0.1
+ENV NO_PROXY=localhost,127.0.0.1,.volces.com,.tsinghua.edu.cn
+
+ARG INDEX_URL
+ENV UV_INDEX_URL=${INDEX_URL:-https://pypi.org/simple}
+
+RUN uv pip install meson ninja pybind11
 
 # Install NIXL Python module
 # TODO: Move gds_path selection based on arch into NIXL build
@@ -108,9 +113,6 @@ RUN if [ "$ARCH" = "arm64" ]; then \
         cd /opt/nixl && uv pip install . ; \
     fi
 
-ENV HTTP_PROXY=
-ENV HTTPS_PROXY=
-ENV NO_PROXY=
 # Install patched vllm - keep this early in Dockerfile to avoid
 # rebuilds from unrelated source code changes
 ARG VLLM_REF="0.8.5+byted.202505130109"
@@ -119,7 +121,7 @@ ARG VLLM_BRANCH=release_vllm_nixl
 ARG VLLM_WHEEL_REPO="https://iaas-pypi.tos-cn-beijing.ivolces.com/packages/vllm_byted"
 ARG VLLM_WHEEL_NAME="vllm-${VLLM_REF}-cp38-abi3-linux_x86_64.whl"
 # ARG VLLM_PATCH="vllm_v${VLLM_REF}-dynamo-kv-disagg-patch.patch"
-ARG VLLM_PATCHED_PACKAGE_NAME="ai_dynamo_vllm"
+ARG VLLM_PATCHED_PACKAGE_NAME="vllm"
 ARG VLLM_PATCHED_PACKAGE_VERSION="0.8.5"
 ARG VLLM_MAX_JOBS=4
 RUN --mount=type=bind,source=./container/deps/,target=/tmp/deps \
@@ -435,6 +437,16 @@ RUN apt-get update && \
     uv venv $VIRTUAL_ENV --python 3.12 && \
     echo "source $VIRTUAL_ENV/bin/activate" >> ~/.bashrc
 
+ARG INDEX_URL
+ENV UV_INDEX_URL=${INDEX_URL:-https://pypi.org/simple}
+
+ARG HTTP_PROXY
+ENV HTTP_PROXY=$HTTP_PROXY
+ENV HTTPS_PROXY=$HTTP_PROXY
+ENV NO_PROXY=localhost,127.0.0.1,.volces.com,.tsinghua.edu.cn
+
+RUN uv pip install meson ninja pybind11
+
 COPY --from=nixl_base /opt/nixl /opt/nixl
 COPY --from=nixl_base /opt/nixl/commit.txt /opt/nixl/commit.txt
 
@@ -459,6 +471,10 @@ ENV VLLM_KV_CAPI_PATH="/opt/dynamo/bindings/lib/libdynamo_llm_capi.so"
 RUN --mount=type=bind,source=./container/launch_message.txt,target=/workspace/launch_message.txt \
     sed '/^#\s/d' /workspace/launch_message.txt > ~/.launch_screen && \
     echo "cat ~/.launch_screen" >> ~/.bashrc
+
+ENV HTTP_PROXY=
+ENV HTTPS_PROXY=
+ENV NO_PROXY=
 
 # Copy examples
 COPY ./examples examples/
