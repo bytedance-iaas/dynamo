@@ -90,6 +90,16 @@ class Processor(ProcessMixIn):
     def _create_tokenizer(self, engine_args: AsyncEngineArgs) -> AnyTokenizer:
         """Create a TokenizerGroup using engine arguments similar to VLLM's approach"""
         model_path = engine_args.model
+        from vllm.connector import create_remote_connector
+        from vllm.transformers_utils.utils import is_remote_url
+
+        if is_remote_url(model_path):
+            # BaseConnector implements __del__() to clean up the local dir.
+            # Since config files need to exist all the time, so we DO NOT use
+            # with statement to avoid closing the client.
+            client = create_remote_connector(model_path)
+            client.pull_files(ignore_pattern=["*.pt", "*.safetensors", "*.bin"])
+            model_path = client.get_local_dir()
 
         # Create the base tokenizer with VLLM's typical settings
         base_tokenizer = AutoTokenizer.from_pretrained(
