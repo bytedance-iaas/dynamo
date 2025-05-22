@@ -8,6 +8,9 @@ ARG RUNTIME_IMAGE="nvcr.io/nvidia/cuda"
 ARG RUNTIME_IMAGE_TAG="12.8.1-runtime-ubuntu24.04"
 # TODO: Move to published pypi tags
 ARG GENAI_PERF_TAG="e67e853413a07a778dd78a55e299be7fba9c9c24"
+ARG VLLM_PATCHED_PACKAGE_NAME="ai_dynamo_vllm"
+ARG VLLM_PATCHED_PACKAGE_VERSION="0.8.5"
+ARG HPKV_VERSION="0.0.1"
 
 # Define general architecture ARGs for supporting both x86 and aarch64 builds.
 #   ARCH: Used for package suffixes (e.g., amd64, arm64)
@@ -118,9 +121,9 @@ ARG VLLM_REPO=https://github.com/bytedance-iaas/vllm.git
 ARG VLLM_BRANCH=release_vllm_nixl
 ARG VLLM_WHEEL_REPO="https://iaas-pypi.tos-cn-beijing.ivolces.com/packages/vllm_byted"
 ARG VLLM_WHEEL_NAME="vllm-${VLLM_REF}-cp38-abi3-linux_x86_64.whl"
+ARG VLLM_PATCHED_PACKAGE_NAME
+ARG VLLM_PATCHED_PACKAGE_VERSION
 # ARG VLLM_PATCH="vllm_v${VLLM_REF}-dynamo-kv-disagg-patch.patch"
-ARG VLLM_PATCHED_PACKAGE_NAME="ai_dynamo_vllm"
-ARG VLLM_PATCHED_PACKAGE_VERSION="0.8.5"
 ARG VLLM_MAX_JOBS=4
 RUN --mount=type=bind,source=./container/deps/,target=/tmp/deps \
     --mount=type=cache,target=/root/.cache/uv \
@@ -417,6 +420,9 @@ CMD []
 
 FROM ${BASE_IMAGE}:${BASE_IMAGE_TAG} AS runtime
 
+ARG VLLM_PATCHED_PACKAGE_NAME
+ARG VLLM_PATCHED_PACKAGE_VERSION
+
 WORKDIR /workspace
 ENV DYNAMO_HOME=/workspace
 ENV VIRTUAL_ENV=/opt/dynamo/venv
@@ -435,6 +441,18 @@ RUN apt-get update && \
     uv venv $VIRTUAL_ENV --python 3.12 && \
     echo "source $VIRTUAL_ENV/bin/activate" >> ~/.bashrc
 
+# gdkv requirement
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        librdmacm-dev \
+        rdma-core \
+        libibverbs-dev \
+        libncurses5-dev \
+        libmount-dev \
+        libevent-dev \
+        libssl-dev  && \
+    rm -rf /var/lib/apt/lists/*
+
 COPY --from=nixl_base /opt/nixl /opt/nixl
 COPY --from=nixl_base /opt/nixl/commit.txt /opt/nixl/commit.txt
 
@@ -451,6 +469,18 @@ COPY --from=wheel_builder /workspace/dist/*.whl wheelhouse/
 RUN uv pip install ai-dynamo[vllm] --find-links wheelhouse && \
     ln -sf $VIRTUAL_ENV/bin/* /usr/local/bin/ && \
     rm -r wheelhouse
+
+ARG HPKV_VERSION
+
+# Install gkdv sdk
+# RUN http_proxy=  https_proxy= uv pip install hpkv -i https://mirrors.byted.org/pypi/simple/
+RUN uv pip install hpkv==${HPKV_VERSION} --extra-index-url https://scqq9isgq31i0fb8nt4eg.apigateway-cn-beijing.volceapi.com/simple/ --extra-index-url https://bytedpypi.byted.org/simple
+
+# Copy real vllm and reinstall vllm
+RUN mkdir -p /workspace/dist
+COPY --from=base /workspace/dist/${VLLM_PATCHED_PACKAGE_NAME}-*.whl /workspace/dist
+RUN uv pip uninstall ai-dynamo-vllm && \
+    uv pip install /workspace/dist/${VLLM_PATCHED_PACKAGE_NAME}-*.whl
 
 # Tell vllm to use the Dynamo LLM C API for KV Cache Routing
 ENV VLLM_KV_CAPI_PATH="/opt/dynamo/bindings/lib/libdynamo_llm_capi.so"
