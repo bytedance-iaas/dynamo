@@ -456,7 +456,7 @@ RUN apt-get update && \
         libncurses5-dev \
         libmount-dev \
         libevent-dev \
-        libssl-dev  && \
+        libssl-dev  \
         libunwind8-dev && \
     rm -rf /var/lib/apt/lists/*
 
