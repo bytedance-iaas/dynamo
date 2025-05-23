@@ -486,7 +486,8 @@ RUN uv pip install hpkv==${HPKV_VERSION} --extra-index-url https://scqq9isgq31i0
 RUN mkdir -p /workspace/dist
 COPY --from=base /workspace/dist/${VLLM_PATCHED_PACKAGE_NAME}-*.whl /workspace/dist
 RUN uv pip uninstall ai-dynamo-vllm && \
-    uv pip install /workspace/dist/${VLLM_PATCHED_PACKAGE_NAME}-*.whl
+    uv pip install /workspace/dist/${VLLM_PATCHED_PACKAGE_NAME}-*.whl && \
+    uv pip install torchac_cuda lmcache eic --extra-index-url https://scqq9isgq31i0fb8nt4eg.apigateway-cn-beijing.volceapi.com/simple/ --extra-index-url https://bytedpypi.byted.org/simple
 
 # Tell vllm to use the Dynamo LLM C API for KV Cache Routing
 ENV VLLM_KV_CAPI_PATH="/opt/dynamo/bindings/lib/libdynamo_llm_capi.so"
