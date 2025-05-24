@@ -130,10 +130,9 @@ RUN --mount=type=bind,source=./container/deps/,target=/tmp/deps \
     mkdir /tmp/vllm && \
     uv pip install pip wheel && \
     # https://github.com/vllm-project/vllm/pull/17389
-    uv pip install packaging==24.2 setuptools==77.0.3 && \
+    # uv pip install packaging==24.2 setuptools==77.0.3 && \
     # NOTE: vLLM build from source on ARM can take several hours, see VLLM_MAX_JOBS details.
     # PyTorch 2.7 supports CUDA 12.8 and aarch64 installs
-    uv pip install torch==2.7.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128 && \
     python -m pip download --only-binary=:all: --no-deps --dest /tmp/vllm ${VLLM_WHEEL_REPO}/${VLLM_WHEEL_NAME} && \
     # Patch vLLM pre-built download with dynamo additions
     cd /tmp/vllm && \
@@ -149,7 +148,8 @@ RUN --mount=type=bind,source=./container/deps/,target=/tmp/deps \
     sed -i "s/-cp38-abi3-linux_${ARCH_ALT}.whl/-cp38-abi3-manylinux1_${ARCH_ALT}.whl/g" ${VLLM_PATCHED_PACKAGE_NAME}-${VLLM_PATCHED_PACKAGE_VERSION}.dist-info/RECORD && \
     mkdir -p /workspace/dist && \
     wheel pack . --dest-dir /workspace/dist && \
-    uv pip install /workspace/dist/${VLLM_PATCHED_PACKAGE_NAME}-*.whl ;
+    uv pip install /workspace/dist/${VLLM_PATCHED_PACKAGE_NAME}-*.whl && \
+    uv pip install -U torch==2.7.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 
 # Common dependencies
 RUN --mount=type=bind,source=./container/deps/requirements.txt,target=/tmp/requirements.txt \
@@ -405,8 +405,8 @@ COPY --from=perf_analyzer /workspace/perf_analyzer /perf_analyzer
 ENV PATH="/perf/bin:${PATH}"
 
 # Install genai-perf for benchmarking
-RUN uv pip install "git+https://github.com/triton-inference-server/perf_analyzer.git@${GENAI_PERF_TAG}#subdirectory=genai-perf"
-RUN uv pip uninstall tritonclient
+# RUN uv pip install "git+https://github.com/triton-inference-server/perf_analyzer.git@${GENAI_PERF_TAG}#subdirectory=genai-perf"
+# RUN uv pip uninstall tritonclient
 
 COPY . /workspace
 
@@ -418,55 +418,76 @@ CMD []
 ########## Runtime Image ###########
 ####################################
 
-FROM ${BASE_IMAGE}:${BASE_IMAGE_TAG} AS runtime
+FROM  vllm/vllm-openai:v0.8.5 AS runtime
 
 ARG VLLM_PATCHED_PACKAGE_NAME
 ARG VLLM_PATCHED_PACKAGE_VERSION
 
 WORKDIR /workspace
 ENV DYNAMO_HOME=/workspace
-ENV VIRTUAL_ENV=/opt/dynamo/venv
-ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
 # Setup the python environment
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        build-essential \
-        cmake \
-        meson \
-        ninja-build \
-        pybind11-dev && \
-    rm -rf /var/lib/apt/lists/* && \
-    uv venv $VIRTUAL_ENV --python 3.12 && \
-    echo "source $VIRTUAL_ENV/bin/activate" >> ~/.bashrc
-
-# gdkv requirement
-RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        librdmacm-dev \
-        rdma-core \
-        libibverbs-dev \
-        libncurses5-dev \
-        libmount-dev \
-        libevent-dev \
-        libssl-dev  && \
+            build-essential \
+            wget \
+            libssl-dev \
+            devscripts \
+            debhelper \
+            fakeroot \
+            pkg-config \
+            dkms \
+            cmake \
+            libfabric-dev \
+            libaio-dev \
+            liburing-dev && \
     rm -rf /var/lib/apt/lists/*
 
-COPY --from=nixl_base /opt/nixl /opt/nixl
-COPY --from=nixl_base /opt/nixl/commit.txt /opt/nixl/commit.txt
+# Install gdrcopy
+WORKDIR /tmp/deps
+RUN wget https://github.com/NVIDIA/gdrcopy/archive/refs/tags/v2.5.tar.gz && \
+    tar zxf v2.5.tar.gz && \
+    cd gdrcopy-2.5/packages && \
+    CUDA=/usr/local/cuda ./build-deb-packages.sh && \
+    dpkg -i gdrdrv-dkms_*.deb libgdrapi_*.deb gdrcopy-tests_*.deb gdrcopy_*.deb
 
+# Install ucx
+WORKDIR /tmp/deps
+RUN wget https://github.com/openucx/ucx/releases/download/v1.18.0/ucx-1.18.0.tar.gz && \
+    tar zxf ucx-1.18.0.tar.gz && \
+    cd ucx-1.18.0 && \
+    ./configure --enable-shared                 \
+			--disable-static                    \
+			--disable-doxygen-doc               \
+			--enable-optimizations              \
+			--enable-cma                        \
+			--enable-devel-headers              \
+			--with-cuda=/usr/local/cuda         \
+			--with-verbs                        \
+			--with-dm                           \
+			--with-gdrcopy=/usr/src/gdrdrv-2.5  \
+			--enable-mt                         \
+			--prefix=/usr/local/ucx &&          \
+    make -j && \
+    make -j install-strip && \
+    ldconfig
 
-RUN if [ "$ARCH" = "arm64" ]; then \
-        cd /opt/nixl && uv pip install . --config-settings=setup-args="-Dgds_path=/usr/local/cuda/targets/sbsa-linux/" ; \
-    else \
-        cd /opt/nixl && uv pip install . ; \
-    fi
+# Install nixl
+WORKDIR /tmp/deps
+RUN wget https://github.com/ai-dynamo/nixl/archive/refs/tags/0.2.1.tar.gz && \
+    tar zxf 0.2.1.tar.gz && \
+    cd nixl-0.2.1/ && \
+    pip install meson ninja pybind11 && \
+    pip install . --config-settings=setup-args="-Ducx_path=/usr/local/ucx" --config-settings=setup-args="-Dstatic_plugins=ucx,ucx_mo,posix"
 
+WORKDIR /tmp
+RUN rm -r deps
+
+WORKDIR /workspace
 # Install the wheels and symlink executables to /usr/local/bin so dynamo components can use them
 # Dynamo components currently do not have the VIRTUAL_ENV in their PATH, so we need to symlink the executables
 COPY --from=wheel_builder /workspace/dist/*.whl wheelhouse/
-RUN uv pip install ai-dynamo[vllm] --find-links wheelhouse && \
+RUN pip install ai-dynamo[vllm] --find-links wheelhouse && \
     ln -sf $VIRTUAL_ENV/bin/* /usr/local/bin/ && \
     rm -r wheelhouse
 
@@ -474,16 +495,27 @@ ARG HPKV_VERSION
 
 # Install gkdv sdk
 # RUN http_proxy=  https_proxy= uv pip install hpkv -i https://mirrors.byted.org/pypi/simple/
-RUN uv pip install hpkv==${HPKV_VERSION} --extra-index-url https://scqq9isgq31i0fb8nt4eg.apigateway-cn-beijing.volceapi.com/simple/ --extra-index-url https://bytedpypi.byted.org/simple
+# RUN uv pip install hpkv==${HPKV_VERSION} --extra-index-url https://scqq9isgq31i0fb8nt4eg.apigateway-cn-beijing.volceapi.com/simple/ --extra-index-url https://bytedpypi.byted.org/simple
 
 # Copy real vllm and reinstall vllm
 RUN mkdir -p /workspace/dist
 COPY --from=base /workspace/dist/${VLLM_PATCHED_PACKAGE_NAME}-*.whl /workspace/dist
-RUN uv pip uninstall ai-dynamo-vllm && \
-    uv pip install /workspace/dist/${VLLM_PATCHED_PACKAGE_NAME}-*.whl
+RUN pip uninstall ai-dynamo-vllm && \
+    pip install /workspace/dist/${VLLM_PATCHED_PACKAGE_NAME}-*.whl
+
+COPY --from=dev /opt/dynamo/bindings /opt/dynamo/bindings
+
+COPY --from=wheel_builder /workspace/target/ /workspace/target/
+RUN cp target/release/dynamo-run /usr/local/bin && \
+    cp target/release/http /usr/local/bin && \
+    cp target/release/llmctl /usr/local/bin && \
+    cp target/release/metrics /usr/local/bin && \
+    cp target/release/mock_worker /usr/local/bin && \
+    rm -r target
 
 # Tell vllm to use the Dynamo LLM C API for KV Cache Routing
 ENV VLLM_KV_CAPI_PATH="/opt/dynamo/bindings/lib/libdynamo_llm_capi.so"
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/ucx/lib:$LD_LIBRARY_PATH
 
 # Copy launch banner
 RUN --mount=type=bind,source=./container/launch_message.txt,target=/workspace/launch_message.txt \
