@@ -488,6 +488,7 @@ RUN mkdir -p /workspace/dist
 COPY --from=base /workspace/dist/${VLLM_PATCHED_PACKAGE_NAME}-*.whl /workspace/dist
 RUN uv pip uninstall ai-dynamo-vllm && \
     uv pip install lmcache eic --extra-index-url https://scqq9isgq31i0fb8nt4eg.apigateway-cn-beijing.volceapi.com/simple/ --extra-index-url https://bytedpypi.byted.org/simple && \
+    uv pip install torch==2.6.0 --force-reinstall --no-cache-dir -i https://mirrors.byted.org/pypi/simple && \
     uv pip install /workspace/dist/${VLLM_PATCHED_PACKAGE_NAME}-*.whl
 
 # Tell vllm to use the Dynamo LLM C API for KV Cache Routing
