@@ -28,14 +28,16 @@ import asyncio
 import logging
 import random
 import socket
+import zmq
+import asyncio
 
 import sglang as sgl
 from components.decode_worker import SGLangDecodeWorker
-from sglang.srt.utils import get_ip
+from sglang.srt.utils import get_ip, get_zmq_socket
 from utils.protocol import DisaggPreprocessedRequest, PreprocessedRequest
 from utils.sglang import parse_sglang_args
 
-from dynamo.llm import ModelType, register_llm
+from dynamo.llm import ModelType, register_llm, WorkerMetricsPublisher
 from dynamo.sdk import async_on_start, depends, dynamo_context, endpoint, service
 
 logger = logging.getLogger(__name__)
@@ -53,13 +55,19 @@ class SGLangWorker:
 
     def __init__(self):
         class_name = self.__class__.__name__
-        self.engine_args = parse_sglang_args(class_name, "")
+        self.engine_args, self.port_args = parse_sglang_args(class_name, "")
         self.engine = sgl.Engine(server_args=self.engine_args)
+        self.metrics_publisher = WorkerMetricsPublisher()
 
         logger.info("SGLangWorker initialized")
 
     @async_on_start
     async def async_init(self):
+        context = zmq.Context(2)
+        self.receive_metrics_from_scheduler = get_zmq_socket(
+            context, zmq.PULL, self.port_args.metrics_ipc_name, True
+        )
+        asyncio.create_task(self._receive_and_publish_metrics_loop())
         runtime = dynamo_context["runtime"]
         logger.info("Registering LLM for discovery")
         comp_ns, comp_name = SGLangWorker.dynamo_address()  # type: ignore
@@ -79,6 +87,15 @@ class SGLangWorker:
                 .endpoint("generate")
                 .client()
             )
+
+    async def _receive_and_publish_metrics_loop(self):
+        while True:
+            try:
+                kv_metrics = await self.receive_metrics_from_scheduler.recv_pyobj()
+                self.metrics_publisher.publish(kv_metrics)
+
+            except Exception as e:
+                logger.exception("Failed to receive or publish metrics")
 
     def _get_bootstrap_info(self):
         """
