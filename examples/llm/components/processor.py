@@ -34,6 +34,7 @@ from vllm.transformers_utils.tokenizer import AnyTokenizer
 from dynamo.llm import KvMetricsAggregator
 from dynamo.runtime import EtcdKvCache
 from dynamo.sdk import async_on_start, depends, dynamo_context, endpoint, service
+from dynamo.sdk.lib.config import ServiceConfig
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,22 @@ class Processor(ProcessMixIn):
             self.tokenizer, self.model_config
         )
         self.min_workers = 1
-        self.request_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
+
+        service_config = ServiceConfig.get_instance()
+        self.enable_custom_scheduler = False
+        self.scheduler_params = None
+
+        if 'CustomScheduler' in service_config:
+            self.scheduler_params = service_config['CustomScheduler']
+            self.enable_custom_scheduler = self.scheduler_params.get('enable', False)
+        if self.enable_custom_scheduler:
+            logger.info(f"Router enables custom scheduler {service_config['CustomScheduler']}")
+            buffer_ms = self.scheduler_params.get('buffer-ms', 0)
+            bucket_ms = self.scheduler_params.get('bucket-ms', 1)
+            self.request_queue = DeadlineAwareRequestQueue(buffer_ms=buffer_ms, bucket_ms=bucket_ms)
+        else:
+            self.request_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
+
         self.request_futures: Dict[str, asyncio.Future] = {}
         self.num_worker_tasks = (
             self.engine_args.router_num_threads
@@ -143,13 +159,32 @@ class Processor(ProcessMixIn):
 
         logger.info(f"Started {self.num_worker_tasks} queue worker tasks")
 
+    async def _is_instance_light(self) -> bool:
+        if not enable_custom_scheduler:
+            return True
+        metrics = await self.metrics_aggregator.get_metrics()
+        gpu_usage = [
+            getattr(e, "gpu_cache_usage_perc", 0.0)
+            for e in metrics.endpoints
+        ]
+        avg_gpu_usage = sum(gpu_usage) / len(gpu_usage) if gpu_usage else 0.0
+        logger.info(f"[Admission] GPU usage = {avg_gpu_usage:.2f}%")
+
+        idle_threshold = self.scheduler_params.get('idle-threshold', 1)
+
+        return avg_gpu_usage < idle_threshold * 100   
+    
     async def _process_queue(self, worker_id: int):
         """Background task to process the request queue"""
         logger.info(f"Queue worker {worker_id} started")
         while True:
             try:
                 # Get the next request from the queue
-                request_data = await self.request_queue.get()
+                if self.enable_custom_scheduler:
+                    is_idle = await self._is_instance_light()
+                    request_data = await self.request_queue.get_eligible(is_idle=is_idle)
+                else:
+                    request_data = await self.request_queue.get()
 
                 # Process the request
                 try:
@@ -186,6 +221,13 @@ class Processor(ProcessMixIn):
             pending_requests[worker_id] = getattr(endpoint, "num_requests_waiting", 0)
         return pending_requests
 
+    def _estimate_prefill_time(self, prompt_len: int) -> int:
+        if not self.enable_custom_scheduler:
+            return 0
+        param1 = self.scheduler_params.get('prefill-time-param1', 0)
+        param2 = self.scheduler_params.get('prefill-time-param2', 0)
+        return int(param1 + param2 * prompt_len)
+    
     async def _generate(
         self,
         raw_request: Union[CompletionRequest, ChatCompletionRequest],
@@ -198,14 +240,31 @@ class Processor(ProcessMixIn):
         future: asyncio.Future[AsyncIterator[Any]] = asyncio.Future()
         self.request_futures[request_id] = future
 
-        # Enqueue the request with minimal processing
-        await self.request_queue.put(
-            {
-                "request_id": request_id,
-                "raw_request": raw_request,
-                "request_type": request_type,
-            }
-        )
+        if self.enable_custom_scheduler:
+            prompt_len = len(raw_request.messages[0].get("content", ""))
+            estimated_prefill_time_ms = self._estimate_prefill_time(prompt_len)
+            arrival_time_ms = int(time.time() * 1000)
+            ttft_ms = self.scheduler_params.get('ttft-slo', 5000) 
+            await self.request_queue.put(
+                {
+                    "request_id": request_id,
+                    "raw_request": raw_request,
+                    "request_type": request_type,
+                    "arrival_time": arrival_time_ms,
+                    "ttft": ttft_ms,
+                    "estimated_prefill_time": estimated_prefill_time_ms,
+                    "prompt_len": prompt_len,
+                }
+            )
+        else:
+            # Enqueue the request with minimal processing
+            await self.request_queue.put(
+                {
+                    "request_id": request_id,
+                    "raw_request": raw_request,
+                    "request_type": request_type,
+                }
+            )
 
         try:
             # Wait for the future to complete and yield the results
@@ -242,11 +301,29 @@ class Processor(ProcessMixIn):
 
                 prefix_hit_rate = 0.0  # Default value
                 if self.use_router:
-                    router_generator = await self.router_client.generate(
-                        Tokens(
-                            tokens=engine_prompt["prompt_token_ids"]
-                        ).model_dump_json()
-                    )
+                    if self.enable_custom_scheduler:
+                        now_ms = int(time.time() * 1000)
+                        tokens = engine_prompt["prompt_token_ids"]
+                        prompt_len = len(tokens)
+                        estimated_prefill_time = self._estimate_prefill_time(prompt_len)
+                        ttft_ms = self.scheduler_params.get('ttft-slo', 5000) 
+
+                        router_generator = await self.router_client.generate(
+                            Tokens(
+                                tokens=tokens,
+                                arrival_time=now_ms,
+                                ttft=ttft_ms,
+                                estimated_prefill_time=estimated_prefill_time,
+                                prompt_len=prompt_len,
+                            ).model_dump_json()
+                        )
+
+                    else:
+                        router_generator = await self.router_client.generate(
+                            Tokens(
+                                tokens=engine_prompt["prompt_token_ids"]
+                            ).model_dump_json()
+                        )
                     decision = await router_generator.__anext__()
                     worker_id, prefix_hit_rate = decision.data()
                     prefix_hit_rate = float(prefix_hit_rate)

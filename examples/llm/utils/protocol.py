@@ -34,6 +34,10 @@ class Request(BaseModel):
 
 class Tokens(BaseModel):
     tokens: list[int]
+    arrival_time: int  # in milliseconds
+    ttft: int          # in milliseconds
+    estimated_prefill_time: int  # in milliseconds
+    prompt_len: Optional[int] = None  # optional, fallback to len(tokens)
 
 
 class PrefillRequest(Request):
