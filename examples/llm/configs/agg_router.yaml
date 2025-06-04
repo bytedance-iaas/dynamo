@@ -25,11 +25,11 @@ Frontend:
   port: 8000
 
 Processor:
-  common-configs: [model, block-size, max-model-len, router]
+  common-configs: [ model, block-size, max-model-len, router ]
 
 Router:
   min-workers: 1
-  common-configs: [model, block-size, router]
+  common-configs: [ model, block-size, router ]
 
 VllmWorker:
   enforce-eager: true
@@ -42,8 +42,17 @@ VllmWorker:
       gpu: '1'
       cpu: '10'
       memory: '20Gi'
-  common-configs: [model, block-size, max-model-len, router, kv-transfer-config]
+  common-configs: [ model, block-size, max-model-len, router, kv-transfer-config ]
 
 Planner:
   environment: local
   no-operation: true
+
+CustomScheduler:
+  enable: true
+  ttft-slo: 5000
+  buffer-ms: 50
+  bucket-ms: 500
+  idle-threshold: 1
+  prefill-time-param1: 5
+  prefill-time-param2: 0.1
