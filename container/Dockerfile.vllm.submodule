@@ -448,7 +448,7 @@ RUN apt-get update && \
     echo "source $VIRTUAL_ENV/bin/activate" >> ~/.bashrc
 
 # gdkv&eic&oniond requirement
-RUN curl -fsSL https://mirrors.byted.org/extra-tools/ubuntu/GPG-KEY-system | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/volc-extra-tools.gpg && \
+RUN curl -fsSL https://mirrors.byted.org/extra-tools/ubuntu/GPG-KEY-system | gpg --dearmor -o /etc/apt/trusted.gpg.d/volc-extra-tools.gpg && \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/trusted.gpg.d/volc-extra-tools.gpg] http://mirrors.byted.org/extra-tools/ubuntu noble main" > /etc/apt/sources.list.d/volctools.list && \
     apt update && \
     apt install -y onion-ai-data
