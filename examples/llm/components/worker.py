@@ -59,8 +59,7 @@ class VllmWorker:
         self.namespace, _ = VllmWorker.dynamo_address()  # type: ignore
         self._prefill_queue_stream_name = f"{self.namespace}_prefill_queue"
         logger.info(
-            f"Prefill queue: {self._prefill_queue_nats_server}:{self._prefill_queue_stream_name}" \
-                + f" for model {self.model_name}"
+            f"Prefill queue: {self._prefill_queue_nats_server}:{self._prefill_queue_stream_name}"
         )
 
         if self.engine_args.remote_prefill:
