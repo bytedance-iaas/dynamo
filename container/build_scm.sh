@@ -36,6 +36,15 @@ if [ "${CUSTOM_BUILD_WHEEL_ONLY}" == "true" ]; then
     # 如果 CUSTOM_BUILD_WHEEL_ONLY 为 true，则只构建 wheelhouse 镜像，并随后上传到 tos
     TARGET="wheel_builder"
     IMAGE_REPO_NAME="wheelhouse"
+fi
+
+# IMAGE_NAME 格式：dynamo:v0.8.5.byted.0.0.2.202505152017
+IMAGE_TAG=$(echo v${VLLM_REF#v} | sed 's/+/./g')
+IMAGE_TAG=$(echo "$IMAGE_TAG" | sed "s/\(.*\.\)[0-9]\+/\1$BUILD_TIME/")  # 替换为当前时戳
+IMAGE_NAME=${IMAGE_REPO_NAME}:${IMAGE_TAG}
+TARGET_IMAGE=iaas-gpu-cn-beijing.cr.volces.com/serving/${IMAGE_NAME}
+
+if [ "${CUSTOM_BUILD_WHEEL_ONLY}" == "true" ]; then
     # tos 相关参数，必须设置
     if [ -z "$CUSTOM_TOS_AK" ] && [ -z "$CUSTOM_TOS_SK" ]; then
         echo "CUSTOM_TOS_AK and CUSTOM_TOS_SK are not set"
@@ -60,13 +69,6 @@ else
 
     docker login -u ${CUSTOM_DOCKER_USERNAME} -p ${CUSTOM_DOCKER_PASSWORD} iaas-gpu-cn-beijing.cr.volces.com
 fi
-
-# IMAGE_NAME 格式：dynamo:v0.8.5.byted.0.0.2.202505152017
-IMAGE_TAG=$(echo v${VLLM_REF#v} | sed 's/+/./g')
-IMAGE_TAG=$(echo "$IMAGE_TAG" | sed "s/\(.*\.\)[0-9]\+/\1$BUILD_TIME/")  # 替换为当前时戳
-IMAGE_NAME=${IMAGE_REPO_NAME}:${IMAGE_TAG}
-TARGET_IMAGE=iaas-gpu-cn-beijing.cr.volces.com/serving/${IMAGE_NAME}
-
 
 # 如果是 SCM 构建，则准备 docker 环境
 if [[ "${SCM_BUILD}" == "True" ]]; then
