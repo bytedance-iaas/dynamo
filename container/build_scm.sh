@@ -42,7 +42,12 @@ fi
 IMAGE_TAG=$(echo v${VLLM_REF#v} | sed 's/+/./g')
 IMAGE_TAG=$(echo "$IMAGE_TAG" | sed "s/\(.*\.\)[0-9]\+/\1$BUILD_TIME/")  # 替换为当前时戳
 IMAGE_NAME=${IMAGE_REPO_NAME}:${IMAGE_TAG}
-TARGET_IMAGE=iaas-gpu-cn-beijing.cr.volces.com/serving/${IMAGE_NAME}
+TARGET_IMAGE=hub.byted.org/iaas/${IMAGE_NAME}
+
+# 如果是 SCM 构建，则准备 docker 环境
+if [[ "${SCM_BUILD}" == "True" ]]; then
+    source /root/start_dockerd.sh
+fi
 
 if [ "${CUSTOM_BUILD_WHEEL_ONLY}" == "true" ]; then
     # tos 相关参数，必须设置
@@ -67,12 +72,7 @@ else
         exit 1
     fi
 
-    docker login -u ${CUSTOM_DOCKER_USERNAME} -p ${CUSTOM_DOCKER_PASSWORD} iaas-gpu-cn-beijing.cr.volces.com
-fi
-
-# 如果是 SCM 构建，则准备 docker 环境
-if [[ "${SCM_BUILD}" == "True" ]]; then
-    source /root/start_dockerd.sh
+    skopeo login -u ${CUSTOM_DOCKER_USERNAME} -p ${CUSTOM_DOCKER_PASSWORD} ${TARGET_IMAGE%%/*}
 fi
 
 cd container
@@ -127,8 +127,7 @@ if [ "${CUSTOM_BUILD_WHEEL_ONLY}" == "true" ]; then
     echo "Upload wheels to tos successfully"
 else
     docker images
-    docker tag ${IMAGE_NAME} ${TARGET_IMAGE}
-    docker push ${TARGET_IMAGE}
+    http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= skopeo copy --insecure-policy --all --retry-times 10 docker-daemon:$IMAGE_NAME docker://$TARGET_IMAGE
 
     echo "Build and push ${TARGET_IMAGE} successfully"
     cd ${ROOT_DIR}
