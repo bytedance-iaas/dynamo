@@ -180,6 +180,7 @@ RUN cd /workspace/vllm && \
     uv pip install /workspace/dist/vllm-*.whl &&\
     unset CMAKE_BUILD_TYPE && \
     unset SETUPTOOLS_SCM_PRETEND_VERSION && \
+    unset MAX_JOBS && \
     cd /workspace
 
 # Common dependencies
