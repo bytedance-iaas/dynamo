@@ -78,11 +78,6 @@ RUN apt-get update -y && \
     --reinstall libibverbs-dev rdma-core ibverbs-utils libibumad-dev \
     libnuma-dev librdmacm-dev ibverbs-providers
 
-ARG HTTP_PROXY
-ENV HTTP_PROXY=$HTTP_PROXY
-ENV HTTPS_PROXY=$HTTP_PROXY
-ENV NO_PROXY=localhost,127.0.0.1
-
 ARG NIXL_UCX_REF=v1.19.x
 
 WORKDIR /workspace
@@ -165,23 +160,49 @@ RUN uv pip install /workspace/wheels/nixl/*.whl
 
 # Install patched vllm - keep this early in Dockerfile to avoid
 # rebuilds from unrelated source code changes
+
+# Install patched vllm - keep this early in Dockerfile to avoid
+# rebuilds from unrelated source code changes
+ARG VLLM_REF="0.8.5+byted.202505130109"
 ARG VLLM_REPO=https://github.com/bytedance-iaas/vllm.git
 ARG VLLM_BRANCH=release_vllm_nixl
-ARG VLLM_VERSION=0.8.4
+ARG VLLM_WHEEL_REPO="https://iaas-pypi.tos-cn-beijing.ivolces.com/packages/vllm_byted"
+ARG VLLM_WHEEL_NAME="vllm-${VLLM_REF}-cp38-abi3-linux_x86_64.whl"
+ARG VLLM_PATCHED_PACKAGE_NAME
+ARG VLLM_PATCHED_PACKAGE_VERSION
+# ARG VLLM_PATCH="vllm_v${VLLM_REF}-dynamo-kv-disagg-patch.patch"
 ARG VLLM_MAX_JOBS=4
-RUN git clone ${VLLM_REPO}
-RUN git -C vllm checkout ${VLLM_BRANCH}
-RUN cd /workspace/vllm && \
-    export CMAKE_BUILD_TYPE=Release && \
-    export SETUPTOOLS_SCM_PRETEND_VERSION=$VLLM_VERSION && \
-    export MAX_JOBS=${VLLM_MAX_JOBS} && \
-    uv pip install --requirement requirements/build.txt && \
-    python3 setup.py bdist_wheel --dist-dir=/workspace/dist --py-limited-api=cp38 && \
-    uv pip install /workspace/dist/vllm-*.whl &&\
-    unset CMAKE_BUILD_TYPE && \
-    unset SETUPTOOLS_SCM_PRETEND_VERSION && \
-    unset MAX_JOBS && \
-    cd /workspace
+RUN --mount=type=bind,source=./container/deps/,target=/tmp/deps \
+    --mount=type=cache,target=/root/.cache/uv \
+    mkdir /tmp/vllm && \
+    mkdir -p /workspace/dist && \
+    uv pip install pip wheel && \
+    # https://github.com/vllm-project/vllm/pull/17389
+    uv pip install packaging==24.2 setuptools==77.0.3 && \
+    # NOTE: vLLM build from source on ARM can take several hours, see VLLM_MAX_JOBS details.
+    # PyTorch 2.7 supports CUDA 12.8 and aarch64 installs
+    uv pip install torch==2.7.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128 && \
+    python -m pip download --only-binary=:all: --no-deps --dest /tmp/vllm ${VLLM_WHEEL_REPO}/${VLLM_WHEEL_NAME} && \
+    # Patch vLLM pre-built download with dynamo additions
+    cd /tmp/vllm && \
+    src_name=vllm-${VLLM_REF}.dist-info && dst_name=${VLLM_PATCHED_PACKAGE_NAME}-${VLLM_PATCHED_PACKAGE_VERSION}.dist-info && \
+    if [[ "$src_name" != "$dst_name" ]]; then \
+        # Rename the package from vllm to ai_dynamo_vllm
+        wheel unpack *.whl && \
+        cd vllm-${VLLM_REF}/ && \
+        mv vllm-${VLLM_REF}.dist-info ${VLLM_PATCHED_PACKAGE_NAME}-${VLLM_PATCHED_PACKAGE_VERSION}.dist-info && \
+        sed -i "s/^Name: vllm/Name: ${VLLM_PATCHED_PACKAGE_NAME}/g" ${VLLM_PATCHED_PACKAGE_NAME}-${VLLM_PATCHED_PACKAGE_VERSION}.dist-info/METADATA && \
+        sed -i "s/^Version: ${VLLM_REF}/Version: ${VLLM_PATCHED_PACKAGE_VERSION}/g" ${VLLM_PATCHED_PACKAGE_NAME}-${VLLM_PATCHED_PACKAGE_VERSION}.dist-info/METADATA && \
+        # Update wheel tag from linux_${ARCH_ALT} to manylinux1_${ARCH_ALT} in WHEEL file
+        sed -i "s/Tag: cp38-abi3-linux_${ARCH_ALT}/Tag: cp38-abi3-manylinux1_${ARCH_ALT}/g" ${VLLM_PATCHED_PACKAGE_NAME}-${VLLM_PATCHED_PACKAGE_VERSION}.dist-info/WHEEL && \
+        # Also update the tag in RECORD file to match
+        sed -i "s/-cp38-abi3-linux_${ARCH_ALT}.whl/-cp38-abi3-manylinux1_${ARCH_ALT}.whl/g" ${VLLM_PATCHED_PACKAGE_NAME}-${VLLM_PATCHED_PACKAGE_VERSION}.dist-info/RECORD && \
+        wheel pack . --dest-dir /workspace/dist; \
+    else \
+        echo "src_name and dst_name are the same" && \
+        mv ./vllm-${VLLM_REF}*.whl /workspace/dist/ ; \
+    fi && \
+    uv pip install /workspace/dist/${VLLM_PATCHED_PACKAGE_NAME}-*.whl;
 
 # Common dependencies
 RUN --mount=type=bind,source=./container/deps/requirements.txt,target=/tmp/requirements.txt \
@@ -492,6 +513,20 @@ COPY --from=wheel_builder /workspace/dist/*.whl wheelhouse/
 RUN uv pip install ai-dynamo[vllm] --find-links wheelhouse && \
     uv pip install nixl --find-links wheelhouse && \
     ln -sf $VIRTUAL_ENV/bin/* /usr/local/bin/
+
+ARG HPKV_VERSION
+
+# Install gkdv sdk
+# RUN http_proxy=  https_proxy= uv pip install hpkv -i https://mirrors.byted.org/pypi/simple/
+RUN uv pip install hpkv==${HPKV_VERSION} --extra-index-url https://scqq9isgq31i0fb8nt4eg.apigateway-cn-beijing.volceapi.com/simple/ --extra-index-url https://bytedpypi.byted.org/simple
+
+# Copy real vllm and reinstall vllm
+RUN mkdir -p /workspace/dist
+COPY --from=base /workspace/dist/${VLLM_PATCHED_PACKAGE_NAME}-*.whl /workspace/dist
+RUN uv pip uninstall ai-dynamo-vllm && \
+    uv pip install lmcache eic --extra-index-url https://scqq9isgq31i0fb8nt4eg.apigateway-cn-beijing.volceapi.com/simple/ --extra-index-url https://bytedpypi.byted.org/simple && \
+    uv pip install torch==2.6.0 --force-reinstall --no-cache-dir -i https://mirrors.byted.org/pypi/simple && \
+    uv pip install /workspace/dist/${VLLM_PATCHED_PACKAGE_NAME}-*.whl
 
 # Tell vllm to use the Dynamo LLM C API for KV Cache Routing
 ENV VLLM_KV_CAPI_PATH="/opt/dynamo/bindings/lib/libdynamo_llm_capi.so"
