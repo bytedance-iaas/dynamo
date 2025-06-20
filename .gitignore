@@ -78,6 +78,7 @@ __pycache__/
 *$py.class
 *.so
 *.egg-info
+.python-version
 
 ### Helm ###
 *.tgz

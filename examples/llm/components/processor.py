@@ -215,6 +215,7 @@ class Processor(ProcessMixIn):
                 "request_id": request_id,
                 "raw_request": raw_request,
                 "request_type": request_type,
+                "trace_headers": trace_headers,
             }
         )
 
@@ -233,6 +234,7 @@ class Processor(ProcessMixIn):
         request_id = request_data["request_id"]
         raw_request = request_data["raw_request"]
         request_type = request_data["request_type"]
+        trace_headers = request_data["trace_headers"]
 
         try:
             # Parse the raw request here instead of in _generate
@@ -342,11 +344,19 @@ class Processor(ProcessMixIn):
     @endpoint(name="chat/completions")
     async def chat_completions(self, raw_request: ChatCompletionRequest):
         if is_otel_available():
-            with self.tracer.start_as_current_span("dynamo.chat.completions",
-                                                   kind=SpanKind.SERVER,
-                                                   attributes={
-                                                       SpanAttributes.GEN_AI_REQUEST_TYPE: LLMRequestTypeValues.CHAT.value},
-                                                   ) as span:
+            from opentelemetry import trace
+            from opentelemetry import context as context_api
+
+            span = self.tracer.start_span(
+                "dynamo.chat.completions",
+                kind=SpanKind.SERVER,
+                attributes={
+                   SpanAttributes.GEN_AI_REQUEST_TYPE: LLMRequestTypeValues.CHAT.value},
+            )
+            ctx = trace.set_span_in_context(span)
+            ctx_token = context_api.attach(ctx)
+
+            try:
                 start_time = time.time()
                 first_token = True
                 trace_headers = {}
@@ -364,6 +374,8 @@ class Processor(ProcessMixIn):
                 )
 
                 async for response in self._generate(raw_request, RequestType.CHAT, trace_headers):
+                    accumulate_stream_items(response, complete_response)
+
                     if first_token:
                         time_of_first_token = time.time()
                         shared_attributes[SpanAttributes.GEN_AI_RESPONSE_MODEL] = complete_response.get("model")
@@ -374,7 +386,6 @@ class Processor(ProcessMixIn):
                                                                         attributes=shared_attributes)
                         first_token = False
                     yield response
-                    accumulate_stream_items(response, complete_response)
 
                 span.set_attribute(SpanAttributes.GEN_AI_RESPONSE_MODEL, complete_response.get("model"))
                 shared_attributes[SpanAttributes.GEN_AI_RESPONSE_MODEL] = complete_response.get("model")
@@ -424,6 +435,13 @@ class Processor(ProcessMixIn):
                                                description=f"{complete_response.get("error").get("message")}"))
                 else:
                     span.set_status(Status(StatusCode.OK))
+            except Exception as e:
+                span.set_status(Status(StatusCode.ERROR, str(e)))
+                span.record_exception(e)
+                raise
+            finally:
+                span.end()
+                context_api.detach(ctx_token)
         else:
             async for response in self._generate(raw_request, RequestType.CHAT):
                 yield response
