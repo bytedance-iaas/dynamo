@@ -536,7 +536,13 @@ ENV VLLM_KV_CAPI_PATH="/opt/dynamo/bindings/lib/libdynamo_llm_capi.so"
 # Copy launch banner
 RUN --mount=type=bind,source=./container/launch_message.txt,target=/workspace/launch_message.txt \
     sed '/^#\s/d' /workspace/launch_message.txt > ~/.launch_screen && \
-    echo "cat ~/.launch_screen" >> ~/.bashrc
+    echo "cat ~/.launch_screen" >> ~/.bashrc && \
+    apt-get update && \
+    apt-get install -y vim curl iputils-ping git wget telnet tree iptables zip unzip && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    sed -i 's/byted.org/ivolces.com/g' /etc/apt/sources.list.d/cuda.list && \
+    sed -i 's/byted.org/ivolces.com/g' /etc/apt/sources.list.d/ubuntu.sources
 
 
 ENTRYPOINT ["/opt/nvidia/nvidia_entrypoint.sh"]
