@@ -532,14 +532,15 @@ RUN uv pip uninstall ai-dynamo-vllm && \
 
 # Install base components
 RUN apt-get update && \
-    apt-get install -y vim curl iputils-ping git wget telnet tree iptables zip unzip && \
+    apt-get install -y vim curl iputils-ping git wget telnet tree iptables zip unzip cuda-toolkit-12-8 && \
     apt-get clean
 
 # Install DeepGEMM
 RUN cd /workspace && \
     git clone --recursive https://github.com/deepseek-ai/DeepGEMM.git && \
     cd DeepGEMM && \
-    uv pip install -e .
+    uv pip install -e . && \
+    uv pip install cuda-bindings cupy-cuda12x -i https://bytedpypi.byted.org/simple
 
 # Tell vllm to use the Dynamo LLM C API for KV Cache Routing
 ENV VLLM_KV_CAPI_PATH="/opt/dynamo/bindings/lib/libdynamo_llm_capi.so"
