@@ -530,6 +530,12 @@ RUN uv pip uninstall ai-dynamo-vllm && \
     uv pip install torch==2.6.0 --force-reinstall --no-cache-dir -i https://mirrors.byted.org/pypi/simple && \
     uv pip install /workspace/dist/${VLLM_PATCHED_PACKAGE_NAME}-*.whl
 
+# Install DeepGEMM
+RUN cd /workspace && \
+    git clone --recursive https://github.com/deepseek-ai/DeepGEMM.git && \
+    cd DeepGEMM && \
+    uv pip install -e .
+
 # Tell vllm to use the Dynamo LLM C API for KV Cache Routing
 ENV VLLM_KV_CAPI_PATH="/opt/dynamo/bindings/lib/libdynamo_llm_capi.so"
 
