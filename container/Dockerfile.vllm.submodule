@@ -516,6 +516,29 @@ RUN uv pip install ai-dynamo[vllm] --find-links wheelhouse && \
     uv pip install nixl --find-links wheelhouse && \
     ln -sf $VIRTUAL_ENV/bin/* /usr/local/bin/
 
+# Install base components
+RUN apt-get update && \
+    apt-get install -y vim curl iputils-ping git wget telnet tree iptables zip unzip cuda-toolkit-12-8 && \
+    apt-get clean
+
+# gdkv&eic&oniond requirement
+RUN curl -fsSL https://mirrors.byted.org/extra-tools/ubuntu/GPG-KEY-system | gpg --dearmor -o /etc/apt/trusted.gpg.d/volc-extra-tools.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/trusted.gpg.d/volc-extra-tools.gpg] http://mirrors.byted.org/extra-tools/ubuntu noble main" > /etc/apt/sources.list.d/volctools.list && \
+    apt update && \
+    apt install -y onion-ai-data
+
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        librdmacm-dev \
+        rdma-core \
+        libibverbs-dev \
+        libncurses5-dev \
+        libmount-dev \
+        libevent-dev \
+        libssl-dev  \
+        libunwind8-dev && \
+    rm -rf /var/lib/apt/lists/*
+
 ARG HPKV_VERSION
 
 # Install gkdv sdk
@@ -529,11 +552,6 @@ RUN uv pip uninstall ai-dynamo-vllm && \
     uv pip install lmcache eic --extra-index-url https://scqq9isgq31i0fb8nt4eg.apigateway-cn-beijing.volceapi.com/simple/ --extra-index-url https://bytedpypi.byted.org/simple && \
     uv pip install torch==2.6.0 --force-reinstall --no-cache-dir -i https://mirrors.byted.org/pypi/simple && \
     uv pip install /workspace/dist/${VLLM_PATCHED_PACKAGE_NAME}-*.whl
-
-# Install base components
-RUN apt-get update && \
-    apt-get install -y vim curl iputils-ping git wget telnet tree iptables zip unzip cuda-toolkit-12-8 && \
-    apt-get clean
 
 # Install DeepGEMM
 RUN cd /workspace && \
@@ -553,6 +571,8 @@ RUN --mount=type=bind,source=./container/launch_message.txt,target=/workspace/la
     sed -i 's/byted.org/ivolces.com/g' /etc/apt/sources.list.d/cuda.list && \
     sed -i 's/byted.org/ivolces.com/g' /etc/apt/sources.list.d/ubuntu.sources
 
+# Set default pip
+RUN pip config set global.index-url https://mirrors.ivolces.com/pypi/simple/
 
 ENTRYPOINT ["/opt/nvidia/nvidia_entrypoint.sh"]
 CMD []
