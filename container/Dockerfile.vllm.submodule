@@ -527,17 +527,17 @@ RUN curl -fsSL https://mirrors.byted.org/extra-tools/ubuntu/GPG-KEY-system | gpg
     apt update && \
     apt install -y onion-ai-data
 
-RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        librdmacm-dev \
-        rdma-core \
-        libibverbs-dev \
-        libncurses5-dev \
-        libmount-dev \
-        libevent-dev \
-        libssl-dev  \
-        libunwind8-dev && \
-    rm -rf /var/lib/apt/lists/*
+#RUN apt-get update && \
+#    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+#        librdmacm-dev \
+#        rdma-core \
+#        libibverbs-dev \
+#        libncurses5-dev \
+#        libmount-dev \
+#        libevent-dev \
+#        libssl-dev  \
+#        libunwind8-dev && \
+#    rm -rf /var/lib/apt/lists/*
 
 ARG HPKV_VERSION
 
