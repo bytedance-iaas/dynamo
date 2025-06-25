@@ -13,16 +13,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 Frontend:
-  served_model_name: deepseek-ai/DeepSeek-R1-Distill-Llama-8B
+  served_model_name: Llama-3.1-8B-Instruct
   endpoint: dynamo.SGLangWorker.generate
-  port: 8000
+  port: 16666
 
 SGLangWorker:
-  model-path: deepseek-ai/DeepSeek-R1-Distill-Llama-8B
-  served-model-name: deepseek-ai/DeepSeek-R1-Distill-Llama-8B
+  model-path: /data01/models/Llama-3.1-8B-Instruct
+  served-model-name: Llama-3.1-8B-Instruct
   tp: 1
   trust-remote-code: true
   skip-tokenizer-init: true
+  enable-metrics: true
+  context-length: 8192
+  mem-fraction-static: 0.98
   ServiceArgs:
     workers: 1
     resources:

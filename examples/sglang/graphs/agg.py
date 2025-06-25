@@ -15,5 +15,8 @@
 
 from components.frontend import Frontend
 from components.worker import SGLangWorker
+import sys
+from components.planner_service import Planner
 
 Frontend.link(SGLangWorker)
+Frontend.link(Planner)
