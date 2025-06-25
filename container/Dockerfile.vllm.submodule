@@ -558,7 +558,8 @@ RUN cd /workspace && \
     git clone --recursive https://github.com/deepseek-ai/DeepGEMM.git && \
     cd DeepGEMM && \
     uv pip install -e . && \
-    uv pip install cuda-bindings cupy-cuda12x -i https://bytedpypi.byted.org/simple
+    uv pip install cuda-bindings cupy-cuda12x -i https://bytedpypi.byted.org/simple && \
+    CUDA_VISIBLE_DEVICES=. python3 setup.py develop
 
 # Tell vllm to use the Dynamo LLM C API for KV Cache Routing
 ENV VLLM_KV_CAPI_PATH="/opt/dynamo/bindings/lib/libdynamo_llm_capi.so"
