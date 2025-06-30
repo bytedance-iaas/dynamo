@@ -501,7 +501,7 @@ RUN cd /workspace && \
     git clone --recursive https://github.com/deepseek-ai/DeepGEMM.git && \
     cd DeepGEMM && \
     uv pip install -e . && \
-    uv pip install cuda-bindings cupy-cuda12x -i https://bytedpypi.byted.org/simple && \
+    uv pip install pip cuda-bindings cupy-cuda12x -i https://bytedpypi.byted.org/simple && \
     CUDA_VISIBLE_DEVICES=. python3 setup.py develop
 
 # Tell vllm to use the Dynamo LLM C API for KV Cache Routing
@@ -510,7 +510,12 @@ ENV VLLM_KV_CAPI_PATH="/opt/dynamo/bindings/lib/libdynamo_llm_capi.so"
 # Copy launch banner
 RUN --mount=type=bind,source=./container/launch_message.txt,target=/workspace/launch_message.txt \
     sed '/^#\s/d' /workspace/launch_message.txt > ~/.launch_screen && \
-    echo "cat ~/.launch_screen" >> ~/.bashrc
+    echo "cat ~/.launch_screen" >> ~/.bashrc && \
+    rm -rf /var/lib/apt/lists/* && \
+    sed -i 's/byted.org/ivolces.com/g' /etc/apt/sources.list.d/*
+
+# Set default pip
+RUN pip config set global.index-url https://mirrors.ivolces.com/pypi/simple/
 
 # Copy examples
 COPY ./examples examples/
