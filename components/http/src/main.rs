@@ -44,7 +44,7 @@ async fn app(runtime: Runtime) -> Result<()> {
     let http_service = HttpService::builder()
         .port(args.port)
         .host(args.host)
-        .build()?;
+        .build(distributed.etcd_client())?;
     let manager = http_service.state().manager_clone();
 
     // todo - use the IntoComponent trait to register the component

@@ -14,6 +14,7 @@ use derive_builder::Builder;
 use dynamo_runtime::DistributedRuntime;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+use dynamo_runtime::transports::etcd;
 
 /// HTTP service shared state
 pub struct State {
@@ -149,7 +150,7 @@ impl HttpService {
 }
 
 impl HttpServiceConfigBuilder {
-    pub fn build(self) -> Result<HttpService, anyhow::Error> {
+    pub fn build(self, etcd_client: Option<etcd::Client>) -> Result<HttpService, anyhow::Error> {
         let config: HttpServiceConfig = self.build_internal()?;
 
         let model_manager = Arc::new(ModelManager::new());
@@ -173,6 +174,12 @@ impl HttpServiceConfigBuilder {
             super::health::health_check_router(state.clone(), None),
             super::clear_kv_blocks::clear_kv_blocks_router(state.clone(), None),
         ];
+        if etcd_client.is_some() {
+            routes.push(super::openai::list_workers_router(
+                etcd_client.unwrap(),
+                state.clone(),
+            ));
+        }
 
         if config.enable_chat_endpoints {
             routes.push(super::openai::chat_completions_router(

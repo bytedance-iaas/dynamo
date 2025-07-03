@@ -19,6 +19,8 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
+use axum::http::HeaderMap;
+use serde_json::{Map, Value};
 use tokio_stream::wrappers::ReceiverStream;
 
 use super::{
@@ -41,6 +43,7 @@ use crate::types::{
 };
 
 use dynamo_runtime::pipeline::{AsyncEngineContext, Context};
+use dynamo_runtime::transports::etcd;
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct ErrorResponse {
@@ -276,6 +279,7 @@ async fn embeddings(
 /// non-streaming requests, we will fold the stream into a single response as part of this handler.
 #[tracing::instrument(skip_all)]
 async fn chat_completions(
+    headers: HeaderMap,
     State((state, template)): State<(Arc<service_v2::State>, Option<RequestTemplate>)>,
     Json(mut request): Json<NvCreateChatCompletionRequest>,
 ) -> Result<Response, (StatusCode, Json<ErrorResponse>)> {
@@ -302,9 +306,16 @@ async fn chat_completions(
     // todo - decide on default
     let streaming = request.inner.stream.unwrap_or(false);
 
+    let mut map = Map::new();
+
+    map.insert("request_headers_dump".to_string(), format!("{:?}", headers).into());
+
+    let req_meta = Value::Object(map);
+
     // update the request to always stream
     let inner_request = async_openai::types::CreateChatCompletionRequest {
         stream: Some(true),
+        metadata: Some(req_meta),
         ..request.inner
     };
 
@@ -432,6 +443,30 @@ async fn list_models_openai(
         data,
     };
     Ok(Json(out).into_response())
+}
+
+async fn list_workers(
+    etcd_client: etcd::Client,
+    State(state): State<Arc<service_v2::State>>,
+) -> Result<Response, (StatusCode, Json<ErrorResponse>)> {
+    check_ready(&state)?;
+    let mut ids = vec![];
+    let keys = etcd_client.kv_get_prefix("instances/dynamo/VllmWorker/generate:").await.unwrap();
+    keys.iter().for_each(|kv| {
+        let mut optional_id = None;
+            if let Some(jj) = kv.value_str().ok()
+                .and_then(|v| serde_json::from_str::<Value>(v).ok()) {
+                optional_id = jj.as_object().clone()
+                    .and_then(|v| v.get("instance_id"))
+                    .and_then(|v| v.as_i64());
+            }
+        if optional_id.is_some() {
+            ids.push(optional_id.unwrap());
+        } else {
+            println!("Can't extract worker id from: {:?}", kv.value_str());
+        }
+    });
+    Ok(Json(ids).into_response())
 }
 
 #[derive(Serialize)]
@@ -596,6 +631,18 @@ pub fn list_models_router(
         .with_state(state);
 
     (vec![doc_for_openai], router)
+}
+
+/// List Workers
+pub fn list_workers_router(
+    etcd_client: etcd::Client,
+    state: Arc<service_v2::State>,
+) -> (Vec<RouteDoc>, Router) {
+    let router = Router::new()
+        .route(&"/v1/workers", get(|x| list_workers(etcd_client, x)))
+        .with_state(state);
+
+    (vec![], router)
 }
 
 #[cfg(test)]

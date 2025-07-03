@@ -19,6 +19,7 @@ import uuid
 import time
 from enum import Enum
 from typing import Any, AsyncIterator, Dict, List, Tuple, Union, Mapping, Optional
+import json
 
 from components.kv_router import Router
 from components.worker import VllmWorker
@@ -42,6 +43,8 @@ from utils.observability import (SpanAttributes, SpanKind, LLMRequestTypeValues,
 
 logger = logging.getLogger(__name__)
 
+class MyChatCompletionRequest(ChatCompletionRequest):
+    metadata: Optional[dict[str, str]] = None
 
 class RequestType(Enum):
     CHAT = "chat"
@@ -198,7 +201,7 @@ class Processor(ProcessMixIn):
 
     async def _generate(
         self,
-        raw_request: Union[CompletionRequest, ChatCompletionRequest],
+        raw_request: Union[CompletionRequest, MyChatCompletionRequest],
         request_type: RequestType,
         trace_headers: Optional[Mapping[str, str]] = None,
     ):
@@ -273,7 +276,17 @@ class Processor(ProcessMixIn):
                     trace_headers=trace_headers,
                 ).model_dump_json()
 
-                if self.use_router:
+                worker_id_header = None
+                if raw_request.metadata is not None:
+                    if "request_headers_dump" in raw_request.metadata:
+                        headers = json.loads(raw_request.metadata["request_headers_dump"])
+                        if "dynamo-worker-id" in headers:
+                            worker_id_header = headers["dynamo-worker-id"]
+                if worker_id_header is not None:
+                    engine_generator = await self.worker_client.direct(
+                        request_obj, int(worker_id_header)
+                    )
+                elif self.use_router:
                     if worker_id == "":
                         engine_generator = await self.worker_client.generate(
                             request_obj
@@ -342,7 +355,7 @@ class Processor(ProcessMixIn):
                 )
 
     @endpoint(name="chat/completions")
-    async def chat_completions(self, raw_request: ChatCompletionRequest):
+    async def chat_completions(self, raw_request: MyChatCompletionRequest):
         if is_otel_available():
             from opentelemetry import trace
             from opentelemetry import context as context_api
