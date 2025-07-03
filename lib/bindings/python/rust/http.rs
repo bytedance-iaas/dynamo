@@ -39,7 +39,7 @@ impl HttpService {
     #[pyo3(signature = (port=None))]
     pub fn new(port: Option<u16>) -> PyResult<Self> {
         let builder = service_v2::HttpService::builder().port(port.unwrap_or(8080));
-        let inner = builder.build().map_err(to_pyerr)?;
+        let inner = builder.build(None).map_err(to_pyerr)?;
         Ok(Self { inner })
     }
 

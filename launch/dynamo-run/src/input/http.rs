@@ -37,7 +37,7 @@ pub async fn run(
         .enable_embeddings_endpoints(true)
         .with_request_template(template)
         .runtime(Some(Arc::new(distributed_runtime)))
-        .build()?;
+        .build(None)?;
     match engine_config {
         EngineConfig::Dynamic => {
             let distributed_runtime = DistributedRuntime::from_settings(runtime.clone()).await?;
