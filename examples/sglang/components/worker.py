@@ -7,12 +7,13 @@ import random
 import signal
 import socket
 import sys
+import zmq 
 from typing import Any, Dict, Optional, Union
 
 import sglang as sgl
 import uvloop
 from sglang.srt.server_args import ServerArgs
-from sglang.srt.utils import get_ip
+from sglang.srt.utils import get_ip, get_zmq_socket
 from utils.protocol import DisaggPreprocessedRequest
 from utils.sgl_utils import parse_sglang_args_inc
 
@@ -42,6 +43,9 @@ class RequestHandler:
         self.component = component
         self.metrics_publisher = WorkerMetricsPublisher()
 
+        self.zmq_context = zmq.asyncio.Context()
+        self.receive_metrics_from_scheduler = None
+
         if server_args.disaggregation_mode != "null":
             self.bootstrap_host, self.bootstrap_port = self._get_bootstrap_info()
             if decode_client is None:
@@ -56,7 +60,13 @@ class RequestHandler:
         logging.info("Request handler initialized")
 
     def setup_metrics(self):
-        """Set up metrics publisher - call this after handler creation"""
+        """Set up metrics publisher"""
+        self.receive_metrics_from_scheduler = get_zmq_socket(
+            self.zmq_context, zmq.PULL, self.engine.port_args.metrics_ipc_name, True
+        )
+
+        asyncio.create_task(self._recieve_and_publish_metrics_loop())
+
         self.metrics_publisher.publish(
             request_active_slots=0,
             request_total_slots=1024,
@@ -75,22 +85,24 @@ class RequestHandler:
         logging.debug("Creating metrics publisher endpoint")
         await self.metrics_publisher.create_endpoint(self.component)
 
-    def _update_metrics(self):
-        """Update metrics with current engine state"""
-        # TODO: remove this once the following upstream changes are merged:
-        #   • sgl-project/sglang#6721 – "Expose runtime KV-cache & request metrics"
-        logging.warning(
-            "Publishing placeholder metrics in SGLangWorker; these are NOT real engine metrics yet and will be replaced once upstream support lands."
-        )
-        self.metrics_publisher.publish(
-            request_active_slots=1,
-            request_total_slots=100,
-            kv_active_blocks=random.randint(0, 500),
-            kv_total_blocks=1000,
-            num_requests_waiting=0,
-            gpu_cache_usage_perc=random.uniform(0.1, 0.8),
-            gpu_prefix_cache_hit_rate=random.uniform(0.0, 0.5),
-        )
+    async def _receive_and_publish_metrics_loop(self):
+        """Receive metrics from SGL scheduler and publish them"""
+        while True:
+            try:
+                kv_metrics = await self.receive_metrics_from_scheduler.recv_pyobj()
+                self.metrics_publisher.publish(
+                    request_active_slots=kv_metrics.request_active_slots,
+                    request_total_slots=kv_metrics.request_total_slots,
+                    kv_active_blocks=kv_metrics.kv_active_blocks,
+                    kv_total_blocks=kv_metrics.kv_total_blocks,
+                    num_requests_waiting=kv_metrics.num_requests_waiting,
+                    gpu_cache_usage_perc=kv_metrics.gpu_cache_usage_perc,
+                    gpu_prefix_cache_hit_rate=kv_metrics.gpu_prefix_cache_hit_rate,
+                    data_parallel_rank=getattr(kv_metrics, 'data_parallel_rank', None),
+                )
+                logging.debug(f"Published metrics: {kv_metrics}")
+            except Exception:
+                logging.exception("Failed to recieve or publish metrics")
 
     def _get_bootstrap_info(self):
         """Bootstrap info from tokenizer manager"""
