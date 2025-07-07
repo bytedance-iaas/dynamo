@@ -65,7 +65,7 @@ class RequestHandler:
             self.zmq_context, zmq.PULL, self.engine.port_args.metrics_ipc_name, True
         )
 
-        asyncio.create_task(self._recieve_and_publish_metrics_loop())
+        asyncio.create_task(self._receive_and_publish_metrics_loop())
 
         self.metrics_publisher.publish(
             request_active_slots=0,
@@ -100,7 +100,6 @@ class RequestHandler:
                     gpu_prefix_cache_hit_rate=kv_metrics.gpu_prefix_cache_hit_rate,
                     data_parallel_rank=getattr(kv_metrics, 'data_parallel_rank', None),
                 )
-                logging.debug(f"Published metrics: {kv_metrics}")
             except Exception:
                 logging.exception("Failed to recieve or publish metrics")
 
@@ -307,7 +306,7 @@ async def init(runtime: DistributedRuntime, server_args: ServerArgs):
     else:
         handler = RequestHandler(engine, server_args, component)
 
-    # Set up metrics in background
+    # Set up the engine metrics reciever
     handler.setup_metrics()
 
     # Set up ZMQ kv event publisher
