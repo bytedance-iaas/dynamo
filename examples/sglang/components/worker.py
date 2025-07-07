@@ -7,11 +7,11 @@ import random
 import signal
 import socket
 import sys
-import zmq 
 from typing import Any, Dict, Optional, Union
 
 import sglang as sgl
 import uvloop
+import zmq
 from sglang.srt.server_args import ServerArgs
 from sglang.srt.utils import get_ip, get_zmq_socket
 from utils.protocol import DisaggPreprocessedRequest
@@ -98,7 +98,7 @@ class RequestHandler:
                     num_requests_waiting=kv_metrics.num_requests_waiting,
                     gpu_cache_usage_perc=kv_metrics.gpu_cache_usage_perc,
                     gpu_prefix_cache_hit_rate=kv_metrics.gpu_prefix_cache_hit_rate,
-                    data_parallel_rank=getattr(kv_metrics, 'data_parallel_rank', None),
+                    data_parallel_rank=getattr(kv_metrics, "data_parallel_rank", None),
                 )
             except Exception:
                 logging.exception("Failed to recieve or publish metrics")
