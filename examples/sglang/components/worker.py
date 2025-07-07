@@ -43,7 +43,7 @@ class RequestHandler:
         self.component = component
         self.metrics_publisher = WorkerMetricsPublisher()
 
-        self.zmq_context = zmq.asyncio.Context()
+        self.zmq_context = zmq.asyncio.Context() # type: ignore
         self.receive_metrics_from_scheduler = None
 
         if server_args.disaggregation_mode != "null":
@@ -89,7 +89,7 @@ class RequestHandler:
         """Receive metrics from SGL scheduler and publish them"""
         while True:
             try:
-                kv_metrics = await self.receive_metrics_from_scheduler.recv_pyobj()
+                kv_metrics = await self.receive_metrics_from_scheduler.recv_pyobj() # type: ignore
                 self.metrics_publisher.publish(
                     request_active_slots=kv_metrics.request_active_slots,
                     request_total_slots=kv_metrics.request_total_slots,
