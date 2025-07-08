@@ -18,8 +18,6 @@ from utils.protocol import DisaggPreprocessedRequest
 from utils.sgl_utils import parse_sglang_args_inc
 
 from dynamo.llm import (
-    ForwardPassMetrics,
-    KvStats,
     ModelType,
     WorkerMetricsPublisher,
     ZmqKvEventPublisher,
@@ -72,23 +70,12 @@ class RequestHandler:
         self.metrics_publisher.publish(
             request_active_slots=0,
             request_total_slots=1024,
-            num_requests_waiting=0,
-            data_parallel_rank=None,
-        )
-
-        kv_stats = KvStats(
             kv_active_blocks=0,
             kv_total_blocks=1024,
+            num_requests_waiting=0,
             gpu_cache_usage_perc=0.0,
             gpu_prefix_cache_hit_rate=0.0,
         )
-
-        metrics = ForwardPassMetrics(
-            worker_stats=worker_stats,
-            kv_stats=kv_stats,
-            spec_decode_stats=None,
-        )
-        self.metrics_publisher.publish(metrics)
         task = asyncio.create_task(self.create_metrics_publisher_endpoint())
         task.add_done_callback(
             lambda _: logging.debug("metrics publisher endpoint created")
