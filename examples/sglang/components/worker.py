@@ -22,7 +22,6 @@ from dynamo.llm import (
     KvStats,
     ModelType,
     WorkerMetricsPublisher,
-    WorkerStats,
     ZmqKvEventPublisher,
     ZmqKvEventPublisherConfig,
     register_llm,
