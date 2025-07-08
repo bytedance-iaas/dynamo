@@ -117,16 +117,6 @@ class RequestHandler:
             except Exception:
                 logging.exception("Failed to recieve or publish metrics")
 
-        # TODO: get spec_dec_stats from sglang once real engine metrics are available
-        spec_dec_stats = None
-
-        metrics = ForwardPassMetrics(
-            worker_stats=worker_stats,
-            kv_stats=kv_stats,
-            spec_decode_stats=spec_dec_stats,
-        )
-        self.metrics_publisher.publish(metrics)
-
     def _get_bootstrap_info(self):
         """Bootstrap info from tokenizer manager"""
         inner_tm = self.engine.tokenizer_manager
