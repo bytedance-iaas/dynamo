@@ -34,11 +34,11 @@ if [[ "${SCM_BUILD}" == "True" ]]; then
     source /root/start_dockerd.sh
 fi
 
-sed -i "s@make -C docker wheel_build@sed -i \"s|docker build |docker build $proxy_args |g\" docker/Makefile; make -C docker wheel_build@" build_trtllm_wheel.sh
-sed -i "s@make -C docker wheel_build@sed -i \"s|docker buildx build |docker buildx build $proxy_args --network host |g\" docker/Makefile; make -C docker wheel_build@" build_trtllm_wheel.sh
-sed -i "s@make -C docker wheel_build@sed -i \"s|=nvcr.io/nvidia/|=iaas-gpu-cn-beijing.cr.volces.com/nvcr.io/nvidia/|\" ./docker/Dockerfile.multi; make -C docker wheel_build@" build_trtllm_wheel.sh
-sed -i "s@make -C docker wheel_build@sed -i \"s|RUN bash|RUN sed -i 's_http://archive.ubuntu.com_http://${BYTED_MIRROR}_g' /etc/apt/sources.list.d/ubuntu.sources ; sed -i 's_http://security.ubuntu.com_http://${BYTED_MIRROR}_g' /etc/apt/sources.list.d/ubuntu.sources ; http_proxy=$http_proxy https_proxy=$https_proxy no_proxy=$no_proxy bash|\" ./docker/Dockerfile.multi; make -C docker wheel_build@" build_trtllm_wheel.sh
-sed -i "s@make -C docker wheel_build@sed -i \"s|RUN bash|RUN http_proxy=$http_proxy https_proxy=$https_proxy no_proxy=$no_proxy bash|\" ./docker/Dockerfile.multi; make -C docker wheel_build@" build_trtllm_wheel.sh
+sed -i "s@make -C docker @sed -i \"s|docker build |docker build $proxy_args |g\" docker/Makefile; make -C docker @" build_trtllm_wheel.sh
+sed -i "s@make -C docker @sed -i \"s|docker buildx build |docker buildx build $proxy_args --network host |g\" docker/Makefile; make -C docker @" build_trtllm_wheel.sh
+sed -i "s@make -C docker @sed -i \"s|=nvcr.io/nvidia/|=iaas-gpu-cn-beijing.cr.volces.com/nvcr.io/nvidia/|\" ./docker/Dockerfile.multi; make -C docker @" build_trtllm_wheel.sh
+sed -i "s@make -C docker @sed -i \"s|RUN bash|RUN sed -i 's_http://archive.ubuntu.com_http://${BYTED_MIRROR}_g' /etc/apt/sources.list.d/ubuntu.sources ; sed -i 's_http://security.ubuntu.com_http://${BYTED_MIRROR}_g' /etc/apt/sources.list.d/ubuntu.sources ; http_proxy=$http_proxy https_proxy=$https_proxy no_proxy=$no_proxy bash|\" ./docker/Dockerfile.multi; make -C docker @" build_trtllm_wheel.sh
+sed -i "s@make -C docker @sed -i \"s|RUN bash|RUN http_proxy=$http_proxy https_proxy=$https_proxy no_proxy=$no_proxy bash|\" ./docker/Dockerfile.multi; make -C docker @" build_trtllm_wheel.sh
 sed -i "s@env -i@env -i http_proxy=$http_proxy https_proxy=$https_proxy no_proxy=$no_proxy@g" build.sh
 sed -i "s@docker build @docker build --network host @g" build.sh
 
