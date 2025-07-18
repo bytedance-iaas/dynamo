@@ -366,8 +366,9 @@ class Processor(ProcessMixIn):
                 attributes={
                    SpanAttributes.GEN_AI_REQUEST_TYPE: LLMRequestTypeValues.CHAT.value},
             )
+            # for some reason the SPAN_KEY is not being set in the context of the generator, so we re-set it
             ctx = trace.set_span_in_context(span)
-            ctx_token = context_api.attach(ctx)
+            context_api.attach(ctx)
 
             try:
                 start_time = time.time()
@@ -454,7 +455,10 @@ class Processor(ProcessMixIn):
                 raise
             finally:
                 span.end()
-                context_api.detach(ctx_token)
+                # Note: we don't detach the context here as this fails in some situations
+                # https://github.com/open-telemetry/opentelemetry-python/issues/2606
+                # This is not a problem since the context will be detached automatically during garbage collection
+                # context_api.detach(ctx_token)
         else:
             async for response in self._generate(raw_request, RequestType.CHAT):
                 yield response
