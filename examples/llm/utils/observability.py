@@ -9,6 +9,12 @@ from typing import Optional
 from vllm.logger import init_logger
 from vllm.utils import run_once
 from enum import Enum
+from utils.observability_buckets import (
+    _GEN_AI_CLIENT_OPERATION_DURATION_BUCKETS,
+    _GEN_AI_SERVER_TIME_PER_OUTPUT_TOKEN_BUCKETS,
+    _GEN_AI_SERVER_TIME_TO_FIRST_TOKEN_BUCKETS,
+    _GEN_AI_CLIENT_TOKEN_USAGE_BUCKETS,
+)
 
 TRACE_HEADERS = ["traceparent", "tracestate"]
 LLM_USAGE_TOKEN_TYPES = ["prompt_tokens", "completion_tokens", "total_tokens"]
@@ -203,6 +209,7 @@ def init_genai_metrics(meter: Meter) -> None:
             name=Meters.LLM_TOKEN_USAGE,
             unit="token",
             description="Measures number of input and output tokens used",
+            explicit_bucket_boundaries_advisory=_GEN_AI_CLIENT_TOKEN_USAGE_BUCKETS,
         )
         # Meters.chat_token_recoder = meter.create_observable_counter()
         Meters.chat_choice_counter = meter.create_counter(
@@ -215,6 +222,7 @@ def init_genai_metrics(meter: Meter) -> None:
             name=Meters.LLM_OPERATION_DURATION,
             unit="s",
             description="GenAI operation duration",
+            explicit_bucket_boundaries_advisory=_GEN_AI_CLIENT_OPERATION_DURATION_BUCKETS,
         )
 
         Meters.chat_exception_counter = meter.create_counter(
@@ -227,16 +235,19 @@ def init_genai_metrics(meter: Meter) -> None:
             name=Meters.LLM_STREAMING_TIME_TO_FIRST_TOKEN,
             unit="s",
             description="Time to first token in streaming chat completions",
+            explicit_bucket_boundaries_advisory=_GEN_AI_SERVER_TIME_TO_FIRST_TOKEN_BUCKETS,
         )
         Meters.streaming_time_to_generate = meter.create_histogram(
             name=Meters.LLM_STREAMING_TIME_TO_GENERATE,
             unit="s",
             description="Time between first token and completion in streaming chat completions",
+            explicit_bucket_boundaries_advisory=_GEN_AI_CLIENT_OPERATION_DURATION_BUCKETS,
         )
         Meters.streaming_time_per_output_token = meter.create_histogram(
             name=Meters.LLM_STREAMING_TIME_PER_OUTPUT_TOKEN,
             unit="s",
             description="Time per output token in streaming chat completions",
+            explicit_bucket_boundaries_advisory=_GEN_AI_SERVER_TIME_PER_OUTPUT_TOKEN_BUCKETS,
         )
         Meters.is_metrics_inited = True
     except Exception as ex:  # pylint: disable=broad-except
